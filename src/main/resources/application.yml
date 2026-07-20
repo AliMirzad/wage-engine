@@ -1,6 +1,6 @@
 spring:
   application:
-    name: accounting-security
+    name: wage-engine
 
   datasource:
     url: jdbc:postgresql://localhost:5432/accounting_db
@@ -21,18 +21,21 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    baseline-version: 0
     locations: classpath:db/migration
+    clean-disabled: false
+  web:
+    error:
+      include-binding-errors: always
+      include-message: always
 
 server:
   port: 8080
-  error:
-    include-message: always
-    include-binding-errors: always
 
-# ------- Custom App Config -------
 app:
   security:
     jwt:
+      #todo CHANGE THIS after deploy
       secret: "CHANGE_ME_IN_PROD_min_32_bytes_base64_encoded_secret_key_here_1234567890"
       access-token-expiration: 900000       # 15 minutes (ms)
       refresh-token-expiration: 604800000   # 7 days (ms)
@@ -52,10 +55,37 @@ app:
       enabled: true
       username: admin
       email: admin@accounting.local
-      # CHANGE THIS after first login!
+      #todo CHANGE THIS after first login!
       password: "ChangeMe@123"
 
 logging:
   level:
-    org.springframework.security: INFO
+    org.flywaydb: DEBUG
+    org.springframework.boot.autoconfigure.flyway: TRACE
     com.accounting.security: DEBUG
+    org.springframework.security: INFO
+
+
+ErrorResponse:
+  type: object
+  properties:
+    timestamp:
+      type: string
+      format: date-time
+    status:
+      type: integer
+      example: 404
+    error:
+      type: string
+      example: Not Found
+    code:
+      type: string
+      description: Machine-readable error code (dot-separated key)
+      example: employee.not_found
+    message:
+      type: string
+      description: Human-readable Persian message
+      example: کارمند با شناسه ۴۲ یافت نشد
+    path:
+      type: string
+      example: /api/v1/employees/42

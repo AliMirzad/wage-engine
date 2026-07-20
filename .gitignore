@@ -1,10 +1,28 @@
-HELP.md
+# ==========================================
+# Build and Release (Maven)
+# ==========================================
 target/
 !.mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
 
-### STS ###
+# ==========================================
+# IDEs & Editors
+# ==========================================
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# Eclipse / STS
 .apt_generated
 .classpath
 .factorypath
@@ -12,29 +30,44 @@ target/
 .settings
 .springBeans
 .sts4-cache
+bin/
 
-### IntelliJ IDEA ###
-.idea
-*.iws
-*.iml
-*.ipr
+# VS Code
+.vscode/
 
-### NetBeans ###
+# NetBeans
 /nbproject/private/
 /nbbuild/
 /dist/
 /nbdist/
 /.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
 
-### VS Code ###
-.vscode/
-
-### OS ###
+# ==========================================
+# Operating System Files
+# ==========================================
+# Mac
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
 
-### Env ###
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ==========================================
+# Logs and Databases
+# ==========================================
+*.log
+logs/
+*.sqlite
+*.db
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
 *.env
+*.env.local
+.env.*
+application-secret.properties
+application-secret.yml

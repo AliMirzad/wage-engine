@@ -11,11 +11,11 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.accounting</groupId>
-    <artifactId>accounting-security</artifactId>
+    <groupId>ir.manaz</groupId>
+    <artifactId>wage-engine</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>accounting-security</name>
-    <description>Accounting System - Security Base Module</description>
+    <name>wage-engine</name>
+    <description>A modern, multi-tenant payroll and dynamic calculation engine for SMEs. Built with Java 21, React</description>
 
     <properties>
         <java.version>21</java.version>
