@@ -1,171 +1,110 @@
-# Accounting Security Base Module
+# ⚙️ Wage Engine (سیستم جامع مدیریت حقوق و دستمزد)
 
-Spring Boot 4.1.0 + Spring Security 7 + JWT + PostgreSQL security foundation for a multi-tenant SaaS accounting app.
+این مخزن شامل کدهای سمت سرور (Backend) سیستم **Wage Engine** است که با استفاده از **Java** و فریم‌ورک **Spring Boot** توسعه داده شده است. این سیستم با معماری ماژولار برای مدیریت پرسنل، قراردادها، پروژه‌ها و محاسبات حقوق با پشتیبانی از سیستم‌های چند-مستاجری (Multi-tenant) طراحی شده است.
 
-## Prerequisites
+---
 
-- Java 21+
-- Maven 3.9+
-- PostgreSQL 14+
+## 🌟 ویژگی‌های کلیدی (Features)
 
-## Setup
+*   **امنیت و احراز هویت (Security):** پیاده‌سازی کامل Spring Security همراه با توکن‌های JWT، مدیریت Refresh Token و محدودسازی دفعات ورود ناموفق (Login Attempt Limit).
+*   **معماری چند-مستاجری (Multi-tenancy):** تفکیک کامل داده‌های مشتریان/سازمان‌های مختلف در سطح دیتابیس (Tenant Context).
+*   **ثبت وقایع سیستم (Audit Logging):** ردیابی و ذخیره خودکار تغییرات دیتابیس و اکشن‌های کاربران (AuditorAware).
+*   **مدیریت حقوق و دستمزد (Payroll Domain):** ماژول‌های مجزا برای مدیریت کارمندان (Employees)، قراردادها (Contracts) و پروژه‌ها (Projects).
+*   **اعتبارسنجی بومی (Custom Validation):** دارای اعتبارسنج‌های اختصاصی از جمله بررسی صحت کد ملی ایران (`@ValidIranianNationalId`).
+*   **مدیریت دیتابیس (Migration):** استفاده از Flyway برای کنترل نسخه دیتابیس (شامل `V1__init_security` و `V2__employee_contract_project`).
+*   **حذف نرم (Soft Delete):** پیاده‌سازی مکانیزم Soft Deletable برای جلوگیری از حذف فیزیکی اطلاعات مهم.
 
-1. Create the database:
-```sql
-CREATE USER accounting_user WITH PASSWORD 'accounting_pass';
-CREATE DATABASE accounting_db OWNER accounting_user;
+---
+
+## 🛠 تکنولوژی‌های استفاده شده (Tech Stack)
+
+*   **زبان برنامه‌نویسی:** Java
+*   **فریم‌ورک اصلی:** Spring Boot
+*   **مدیریت وابستگی‌ها:** Maven
+*   **امنیت:** Spring Security + JWT Token
+*   **مدیریت دیتابیس و مایگریشن:** Flyway
+*   **پایگاه داده:** PostgreSQL / MySQL (از طریق تنظیمات `application.yml`)
+*   **چندزبانه بودن (I18N):** پشتیبانی از پیام‌های فارسی (`messages_fa.properties`)
+
+---
+
+## 🏗 معماری و ساختار پروژه (Project Structure)
+
+ساختار پکیج‌های این پروژه (در مسیر `ir.manaz`) به شکل زیر لایه‌بندی شده است:
+
+```text
+src/main/java/ir/manaz/
+ ├── audit/           # سیستم ثبت وقایع و لاگ‌گیری (AuditLog, AuditEvent)
+ ├── common/          # کلاس‌های پایه، Responseها و اعتبارسنجی‌ها (NationalIdValidator)
+ ├── config/          # تنظیمات اصلی اسپرینگ (Security, Flyway, AppProperties)
+ ├── exception/       # مدیریت متمرکز خطاها (GlobalExceptionHandler)
+ ├── payroll/         # منطق اصلی کسب‌وکار (Employee, Contract, Project)
+ ├── security/        # سیستم امنیتی، JWT، مدیریت نقش‌ها، توکن‌ها و UserDetails
+ └── tenant/          # پیاده‌سازی Multi-tenancy و Tenant Context
+
 ```
 
-2. (Optional) tweak `application.yml`:
-    - `app.security.jwt.secret` — **must** be changed before production (min 32 bytes)
-    - `app.security.super-admin.password` — first-run admin password
-    - `spring.datasource.*` — DB connection
+---
 
-3. Run:
+## 🚀 راهنمای نصب و اجرا (Getting Started)
+
+### ۱. تنظیمات دیتابیس
+
+ابتدا یک دیتابیس خالی ایجاد کنید. اطلاعات اتصال به دیتابیس را در فایل `src/main/resources/application.yml` تنظیم کنید.
+
+### ۲. بیلد و اجرای مایگریشن‌ها
+
+با اجرای پروژه، اسکریپت‌های Flyway (موجود در پوشه `db/migration`) به صورت خودکار اجرا شده و جداول مربوط به امنیت و حقوق و دستمزد را می‌سازند.
+
 ```bash
-./mvnw spring-boot:run
+mvn clean install
+
 ```
-Flyway will create all tables, `DefaultRoles` seeds the 6 system roles, `SuperAdminSeeder` creates the first admin.
 
-## API Quickstart
+### ۳. اجرای سرویس
 
-### 1. Login as super-admin
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"usernameOrEmail":"admin","password":"ChangeMe@123"}'
-```
-Response:
-```json
-{
-  "accessToken": "eyJhbGciOi...",
-  "refreshToken": "eyJhbGciOi...",
-  "tokenType": "Bearer",
-  "expiresIn": 900,
-  "user": {
-    "id": 1, "tenantId": null, "username": "admin",
-    "roles": ["SUPER_ADMIN"],
-    "permissions": ["USER_READ","USER_WRITE", ...]
-  }
-}
-```
-
-### 2. Call a protected endpoint
-```bash
-curl http://localhost:8080/api/v1/employees \
-  -H "Authorization: Bearer <accessToken>"
-```
-
-### 3. Refresh
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"<refreshToken>"}'
-```
-
-### 4. Forgot / reset
-```bash
-curl -X POST http://localhost:8080/api/v1/auth/forgot-password \
-  -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com"}'
-# Reset token is logged to console (TODO: hook up email)
-
-curl -X POST http://localhost:8080/api/v1/auth/reset-password \
-  -H "Content-Type: application/json" \
-  -d '{"token":"<token-from-log>","newPassword":"NewPass1"}'
-```
-
-## How to Protect Your Own Endpoints
-
-The whole point of permission-based security: check permissions directly.
-
-```java
-@RestController
-@RequestMapping("/api/v1/employees")
-public class EmployeeController {
-
-    @GetMapping
-    @PreAuthorize("hasAuthority('EMPLOYEE_READ')")
-    public List<EmployeeDto> list() { ... }
-
-    @PostMapping
-    @PreAuthorize("hasAuthority('EMPLOYEE_WRITE')")
-    public EmployeeDto create(...) { ... }
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('EMPLOYEE_DELETE')")
-    public void delete(@PathVariable Long id) { ... }
-}
-```
-
-## Getting the Current Tenant/User in Your Code
-
-**Option A** — inject via `@AuthenticationPrincipal`:
-```java
-@GetMapping("/me")
-public UserDto me(@AuthenticationPrincipal AuthenticatedPrincipal p) {
-    Long userId = p.userId();
-    Long tenantId = p.tenantId();
-    ...
-}
-```
-
-**Option B** — anywhere in code via `TenantContext`:
-```java
-Long tenantId = TenantContext.getTenantId();
-```
-`TenantContext` is populated by `JwtAuthenticationFilter` and cleared at end of request.
-
-## Making Your Entities Tenant-Aware
-
-Implement `TenantAware` and add a `tenant_id` column. On save, set it from `TenantContext.getTenantId()`.
-On read, always filter by tenant — either manually in repositories, or with a Hibernate `@Filter` for automatic isolation (recommended for a real deployment).
-
-## System Roles
-
-| Role            | Purpose                                          |
-|-----------------|--------------------------------------------------|
-| `SUPER_ADMIN`   | Platform-level (you, the vendor)                 |
-| `COMPANY_ADMIN` | Owner of a single company/tenant                 |
-| `ACCOUNTANT`    | Day-to-day payroll work                          |
-| `MANAGER`       | Read-only + payroll approval                     |
-| `EMPLOYEE`      | Sees only their own payslip                      |
-| `AUDITOR`       | Read-only across financial data                  |
-
-Custom roles can be created per-tenant later (the `roles` table already supports `tenant_id`).
-
-## Security Features Enabled
-
-- BCrypt password hashing (12 rounds)
-- JWT access token (15 min) + rotating refresh token (7 days) with jti revocation
-- Brute-force protection: 5 failed attempts → 15 min lock
-- Password rules: min 8 chars, at least 1 letter + 1 digit (customizable via `AppSecurityProperties`)
-- Password reset via one-time SHA-256-hashed token (30 min TTL)
-- Stateless (no HTTP session)
-- Audit log (async) for auth events + admin actions
-- CORS disabled (per project spec, enable later per environment)
-
-## Directory Layout
+mvn spring-boot:run
 
 ```
-src/main/java/com/accounting/security/
-├── config/       Security wiring, properties, auditor
-├── tenant/       Multi-tenancy primitives
-├── user/         User entity + Spring Security bridge
-├── role/         Role, Permission, default seeder
-├── auth/         Login/register/refresh/reset controllers + service
-├── jwt/          JWT filter, service, entry points
-├── token/        Refresh & password-reset token stores
-├── loginattempt/ Brute-force tracker
-├── audit/        Audit log entity + async service
-├── exception/    Business exceptions + global handler
-└── common/       BaseEntity (audit columns + version)
-```
 
-## What's Next (Beyond This Base)
+> **نکته:** سوپر ادمین پیش‌فرض هنگام بالا آمدن برنامه از طریق کلاس `SuperAdminSeeder` در دیتابیس ایجاد می‌شود.
 
-- Hook up an email sender for password reset & welcome emails
-- Add `@Filter`-based Hibernate tenant filter for automatic row-level isolation
-- Add optional 2FA (TOTP)
-- Add rate limiter on `/auth/*` (Bucket4j)
-- OpenAPI / Swagger (already whitelisted in `SecurityConfig`)
+---
+
+## 🔌 مستندات رابط‌های برنامه‌نویسی (API Endpoints)
+
+در این بخش مسیرهای اصلی API که برای اتصال کلاینت (فرانت‌اند) به سرور آماده شده‌اند، لیست شده است.
+*(نکته: برای دسترسی به اکثر این مسیرها، ارسال `Bearer Token` در هدر `Authorization` الزامی است.)*
+
+### 🔐 ماژول احراز هویت (Auth API - `AuthController`)
+
+* `POST /api/auth/login` : ورود به سیستم و دریافت JWT و Refresh Token
+* `POST /api/auth/register` : ثبت‌نام کاربر جدید
+* `POST /api/auth/refresh-token` : دریافت توکن جدید با استفاده از Refresh Token
+* `POST /api/auth/logout` : خروج از سیستم و ابطال توکن‌ها
+* `POST /api/auth/forgot-password` : درخواست فراموشی رمز عبور (ارسال لینک/کد)
+* `POST /api/auth/reset-password` : تنظیم رمز عبور جدید
+* `GET  /api/auth/user-info` : دریافت اطلاعات کاربر لاگین شده فعلی
+
+### 👥 ماژول کارمندان (Employee API)
+
+* `POST /api/employees` : ثبت کارمند جدید (همراه با اعتبارسنجی کد ملی)
+* `GET  /api/employees` : دریافت لیست کارمندان (پشتیبانی از Pagination و فیلتر)
+* `GET  /api/employees/{id}` : دریافت اطلاعات دقیق یک کارمند
+* `PUT  /api/employees/{id}` : ویرایش اطلاعات کارمند
+* `DELETE /api/employees/{id}` : حذف کارمند (به صورت Soft Delete)
+
+### 📄 ماژول قراردادها (Contract API)
+
+* `POST /api/contracts` : ثبت قرارداد جدید برای کارمند
+* `GET  /api/contracts` : لیست قراردادهای سازمان
+* `GET  /api/contracts/employee/{employeeId}` : دریافت لیست قراردادهای یک کارمند خاص
+* `PUT  /api/contracts/{id}` : به‌روزرسانی وضعیت/مفاد قرارداد
+
+### 🏢 ماژول پروژه‌ها (Project API)
+
+* `POST /api/projects` : تعریف پروژه جدید
+* `GET  /api/projects` : دریافت لیست پروژه‌ها
+* `PUT  /api/projects/{id}` : ویرایش جزئیات پروژه
+* `DELETE /api/projects/{id}` : بایگانی/حذف پروژه
