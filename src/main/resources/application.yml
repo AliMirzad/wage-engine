@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: accounting-security
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/accounting_db
+    username: accounting_user
+    password: accounting_pass
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# ------- Custom App Config -------
+app:
+  security:
+    jwt:
+      secret: "CHANGE_ME_IN_PROD_min_32_bytes_base64_encoded_secret_key_here_1234567890"
+      access-token-expiration: 900000       # 15 minutes (ms)
+      refresh-token-expiration: 604800000   # 7 days (ms)
+      issuer: "accounting-app"
+    password:
+      min-length: 8
+      require-letter: true
+      require-digit: true
+    login-attempt:
+      max-attempts: 5
+      lock-duration-minutes: 15
+    password-reset:
+      token-expiration-minutes: 30
+    cors:
+      enabled: false
+    super-admin:
+      enabled: true
+      username: admin
+      email: admin@accounting.local
+      # CHANGE THIS after first login!
+      password: "ChangeMe@123"
+
+logging:
+  level:
+    org.springframework.security: INFO
+    com.accounting.security: DEBUG
