@@ -1,5 +1,6 @@
 package ir.manaz.security.auth.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import ir.manaz.security.auth.validation.ValidPassword;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -12,59 +13,74 @@ public final class AuthDtos {
 
     private AuthDtos() {}
 
+    @Schema(description = "درخواست ورود")
     public record LoginRequest(
+            @Schema(example = "admin", description = "username یا email")
             @NotBlank String usernameOrEmail,
+
+            @Schema(example = "ChangeMe@123", format = "password")
             @NotBlank String password,
-            /** Optional - tenant code (e.g. from subdomain). If null, resolved from user. */
+
+            @Schema(example = "acme", description = "اختیاری — اگر null باشد از user استخراج می‌شود")
             String tenantCode
     ) {}
 
+    @Schema(description = "پاسخ ورود / refresh / register")
     public record LoginResponse(
-            String accessToken,
-            String refreshToken,
-            String tokenType,
-            long expiresIn,
+            @Schema(description = "JWT کوتاه‌عمر (۱۵ دقیقه)") String accessToken,
+            @Schema(description = "توکن بلندعمر (۷ روز) — فقط با /auth/refresh") String refreshToken,
+            @Schema(example = "Bearer") String tokenType,
+            @Schema(example = "900", description = "طول عمر access token (ثانیه)") long expiresIn,
             UserInfo user
     ) {}
 
+    @Schema(description = "پروفایل کاربر احراز شده")
     public record UserInfo(
-            Long id,
-            Long tenantId,
-            String username,
-            String email,
+            @Schema(example = "1") Long id,
+            @Schema(example = "null", description = "برای SUPER_ADMIN مقدار null") Long tenantId,
+            @Schema(example = "admin") String username,
+            @Schema(example = "admin@example.com") String email,
             String firstName,
             String lastName,
-            java.util.Set<String> roles,
-            java.util.Set<String> permissions
+            @Schema(example = "[\"COMPANY_ADMIN\"]") java.util.Set<String> roles,
+            @Schema(example = "[\"EMPLOYEE_READ\",\"EMPLOYEE_WRITE\"]",
+                    description = "لیست flat permissionها از همه roleها") java.util.Set<String> permissions
     ) {}
 
+    @Schema(description = "درخواست ثبت‌نام کاربر جدید")
     public record RegisterRequest(
-            @NotBlank @Size(max = 50) String tenantCode,
-            @NotBlank @Size(min = 3, max = 100) String username,
-            @NotBlank @Email @Size(max = 150) String email,
-            @ValidPassword String password,
-            @Size(max = 100) String firstName,
-            @Size(max = 100) String lastName
+            @Schema(example = "acme", description = "کد tenant موجود") @NotBlank @Size(max = 50) String tenantCode,
+            @Schema(example = "john.doe") @NotBlank @Size(min = 3, max = 100) String username,
+            @Schema(example = "john@acme.com") @NotBlank @Email @Size(max = 150) String email,
+            @Schema(example = "StrongPass1", format = "password",
+                    description = "حداقل ۸ کاراکتر، شامل حرف و عدد") @ValidPassword String password,
+            @Schema(example = "John") @Size(max = 100) String firstName,
+            @Schema(example = "Doe") @Size(max = 100) String lastName
     ) {}
 
+    @Schema(description = "درخواست تعویض access token")
     public record RefreshTokenRequest(
-            @NotBlank String refreshToken
+            @Schema(description = "refresh token از login قبلی") @NotBlank String refreshToken
     ) {}
 
+    @Schema(description = "درخواست بازیابی رمز")
     public record ForgotPasswordRequest(
-            @NotBlank @Email String email
+            @Schema(example = "user@example.com") @NotBlank @Email String email
     ) {}
 
+    @Schema(description = "تعیین رمز جدید با token")
     public record ResetPasswordRequest(
-            @NotBlank String token,
-            @ValidPassword String newPassword
+            @Schema(description = "token از /forgot-password") @NotBlank String token,
+            @Schema(example = "NewPass1", format = "password") @ValidPassword String newPassword
     ) {}
 
+    @Schema(description = "تغییر رمز توسط کاربر لاگین‌شده")
     public record ChangePasswordRequest(
-            @NotBlank String currentPassword,
-            @ValidPassword String newPassword
+            @Schema(format = "password") @NotBlank String currentPassword,
+            @Schema(example = "NewPass1", format = "password") @ValidPassword String newPassword
     ) {}
 
+    @Schema(description = "درخواست logout — refresh token را revoke می‌کند")
     public record LogoutRequest(
             @NotBlank String refreshToken
     ) {}
