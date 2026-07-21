@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: accounting_user
       POSTGRES_PASSWORD: accounting_pass
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U accounting_user -d accounting_db"]
       interval: 5s
