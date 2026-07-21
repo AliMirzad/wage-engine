@@ -13,7 +13,14 @@ import static ir.manaz.security.role.Permission.*;
 
 /**
  * Seeds the system-level roles into the database on first boot.
- * These roles have tenant_id = null and are visible to every tenant.
+ *
+ * <p>These roles have {@code tenant_id = null} and are visible to every tenant.
+ *
+ * <p><b>Important behavior change:</b> Once a role exists, this seeder does NOT
+ * modify its permissions on subsequent startups. Role-permission assignments are
+ * managed at runtime via the admin API. If a new {@link Permission} value needs to
+ * be assigned to an existing role, do it either via the admin UI or with a
+ * dedicated Flyway migration.
  */
 @Slf4j
 @Component
@@ -92,16 +99,13 @@ public class DefaultRoles implements CommandLineRunner {
                 ));
     }
 
+    /**
+     * Seed-once: if the role already exists, its permissions are left untouched
+     * (DB is source of truth; admin may have customized them at runtime).
+     */
     private void seed(String name, String description, Set<Permission> perms) {
         roleRepository.findByNameAndTenantIdIsNull(name).ifPresentOrElse(
-                existing -> {
-                    // Keep permissions in sync with code (dev-friendly)
-                    if (!existing.getPermissions().equals(perms)) {
-                        existing.setPermissions(EnumSet.copyOf(perms));
-                        roleRepository.save(existing);
-                        log.info("Updated permissions for system role {}", name);
-                    }
-                },
+                existing -> log.debug("System role {} already exists; skipping seed", name),
                 () -> {
                     Role role = Role.builder()
                             .name(name)
@@ -111,7 +115,7 @@ public class DefaultRoles implements CommandLineRunner {
                             .permissions(EnumSet.copyOf(perms))
                             .build();
                     roleRepository.save(role);
-                    log.info("Seeded system role {}", name);
+                    log.info("Seeded system role {} with {} permissions", name, perms.size());
                 }
         );
     }

@@ -3,6 +3,7 @@ package ir.manaz.config;
 import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
@@ -20,11 +21,6 @@ public class FlywayConfig {
     @Value("${spring.datasource.password}")
     private String password;
 
-    /**
-     * Flyway bean — runs migrations at bean creation time (initMethod = "migrate").
-     * Any bean that depends on the DB schema being present must add
-     * {@code @DependsOn("flyway")}.
-     */
     @Bean(name = "flyway", initMethod = "migrate")
     public Flyway flyway() {
         log.info("Configuring Flyway for {}", url);
@@ -37,15 +33,19 @@ public class FlywayConfig {
     }
 
     /**
-     * Ensures the JPA EntityManagerFactory (which runs Hibernate's
-     * ddl-auto=validate) is created AFTER Flyway has migrated the schema.
+     * Force entityManagerFactory (auto-configured by Spring Boot) to depend on flyway,
+     * so Hibernate's ddl-auto=validate runs AFTER migrations.
      */
     @Bean
-    @DependsOn("flyway")
-    public EntityManagerFactoryBuilderPlaceholder entityManagerFactoryDependency() {
-        return new EntityManagerFactoryBuilderPlaceholder();
+    public static BeanFactoryPostProcessor entityManagerFactoryDependsOnFlyway() {
+        return beanFactory -> {
+            for (String name : beanFactory.getBeanDefinitionNames()) {
+                if ("entityManagerFactory".equals(name)) {
+                    var bd = beanFactory.getBeanDefinition(name);
+                    bd.setDependsOn("flyway");
+                    return;
+                }
+            }
+        };
     }
-
-    /** Marker bean; existence forces @DependsOn ordering. */
-    static class EntityManagerFactoryBuilderPlaceholder {}
 }

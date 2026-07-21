@@ -65,31 +65,6 @@ logging:
     com.accounting.security: DEBUG
     org.springframework.security: INFO
 
-
-ErrorResponse:
-  type: object
-  properties:
-    timestamp:
-      type: string
-      format: date-time
-    status:
-      type: integer
-      example: 404
-    error:
-      type: string
-      example: Not Found
-    code:
-      type: string
-      description: Machine-readable error code (dot-separated key)
-      example: employee.not_found
-    message:
-      type: string
-      description: Human-readable Persian message
-      example: کارمند با شناسه ۴۲ یافت نشد
-    path:
-      type: string
-      example: /api/v1/employees/42
-
 springdoc:
   api-docs:
     path: /v3/api-docs
