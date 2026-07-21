@@ -3,9 +3,9 @@ spring:
     name: wage-engine
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/accounting_db
-    username: accounting_user
-    password: accounting_pass
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/accounting_db}
+    username: ${DB_USER:accounting_user}
+    password: ${DB_PASSWORD:accounting_pass}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -30,15 +30,14 @@ spring:
       include-message: always
 
 server:
-  port: 8080
+  port: ${PORT:8080}
 
 app:
   security:
     jwt:
-      #todo CHANGE THIS after deploy
-      secret: "CHANGE_ME_IN_PROD_min_32_bytes_base64_encoded_secret_key_here_1234567890"
-      access-token-expiration: 900000       # 15 minutes (ms)
-      refresh-token-expiration: 604800000   # 7 days (ms)
+      secret: ${JWT_SECRET:CHANGE_ME_IN_PROD_min_32_bytes_base64_encoded_secret_key_here_1234567890}
+      access-token-expiration: 900000
+      refresh-token-expiration: 604800000
       issuer: "accounting-app"
     password:
       min-length: 8
@@ -53,16 +52,15 @@ app:
       enabled: false
     super-admin:
       enabled: true
-      username: admin
-      email: admin@accounting.local
-      #todo CHANGE THIS after first login!
-      password: "ChangeMe@123"
+      username: ${SUPER_ADMIN_USERNAME:admin}
+      email: ${SUPER_ADMIN_EMAIL:admin@accounting.local}
+      password: ${SUPER_ADMIN_PASSWORD:ChangeMe@123}
 
 logging:
   level:
-    org.flywaydb: DEBUG
-    org.springframework.boot.autoconfigure.flyway: TRACE
-    com.accounting.security: DEBUG
+    org.flywaydb: INFO
+    org.springframework.boot.autoconfigure.flyway: INFO
+    ir.manaz: DEBUG
     org.springframework.security: INFO
 
 springdoc:
