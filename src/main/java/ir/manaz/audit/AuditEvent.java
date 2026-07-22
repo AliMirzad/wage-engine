@@ -26,5 +26,8 @@ public final class AuditEvent {
     public static final String ACCESS_DENIED = "ACCESS_DENIED";
 
     // Roles / permissions
+    public static final String ROLE_CREATED = "ROLE_CREATED";
+    public static final String ROLE_UPDATED = "ROLE_UPDATED";
+    public static final String ROLE_DELETED = "ROLE_DELETED";
     public static final String ROLE_PERMISSIONS_UPDATED = "ROLE_PERMISSIONS_UPDATED";
 }

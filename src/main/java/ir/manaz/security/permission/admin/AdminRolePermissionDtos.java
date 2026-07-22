@@ -1,8 +1,11 @@
 package ir.manaz.security.permission.admin;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 
 import java.util.List;
 import java.util.Set;
@@ -33,7 +36,7 @@ public final class AdminRolePermissionDtos {
             @Schema(description = "توضیح نقش")
             String description,
 
-            @Schema(description = "آیا نقش سیستمی است؟ (رول‌های سیستمی toenantId=null دارند)", example = "true")
+            @Schema(description = "آیا نقش سیستمی است؟ (نقش‌های سیستمی غیرقابل ویرایش/حذف)", example = "true")
             boolean systemRole,
 
             @Schema(description = "شناسه شرکت — null برای نقش‌های سیستمی", nullable = true)
@@ -43,11 +46,48 @@ public final class AdminRolePermissionDtos {
             Set<String> permissionCodes
     ) {}
 
+    @Schema(description = "درخواست ساخت یک نقش جدید (system-wide)")
+    public record CreateRoleRequest(
+            @Schema(
+                    description = "نام یکتای نقش — فقط حروف بزرگ انگلیسی، اعداد و _ ",
+                    example = "WORKSHOP_SUPERVISOR",
+                    requiredMode = Schema.RequiredMode.REQUIRED
+            )
+            @NotBlank
+            @Size(min = 3, max = 50)
+            @Pattern(regexp = "^[A-Z][A-Z0-9_]*$",
+                    message = "نام نقش باید فقط شامل حروف بزرگ انگلیسی، اعداد و _ باشد و با حرف شروع شود")
+            String name,
+
+            @Schema(description = "توضیح نقش (اختیاری)", example = "سرپرست کارگاه تولید")
+            @Size(max = 255)
+            String description,
+
+            @Schema(
+                    description = "لیست کدهای دسترسی تخصیص‌یافته به این نقش (می‌تواند خالی باشد)",
+                    example = "[\"EMPLOYEE_READ\", \"CONTRACT_READ\"]"
+            )
+            List<String> permissionCodes
+    ) {}
+
+    @Schema(description = "درخواست ویرایش نام یا توضیح یک نقش (permissionها از این‌جا تغییر نمی‌کنند)")
+    public record UpdateRoleRequest(
+            @Schema(description = "نام جدید نقش — در صورت خالی، تغییر نمی‌کند", example = "SENIOR_SUPERVISOR")
+            @Size(min = 3, max = 50)
+            @Pattern(regexp = "^[A-Z][A-Z0-9_]*$",
+                    message = "نام نقش باید فقط شامل حروف بزرگ انگلیسی، اعداد و _ باشد و با حرف شروع شود")
+            String name,
+
+            @Schema(description = "توضیح جدید — در صورت خالی، تغییر نمی‌کند")
+            @Size(max = 255)
+            String description
+    ) {}
+
     @Schema(description = "درخواست به‌روزرسانی کامل دسترسی‌های یک نقش")
     public record UpdateRolePermissionsRequest(
             @Schema(
                     description = "لیست کامل کدهای دسترسی (replace کامل، نه merge)",
-                    example = "[\"EMPLOYEE_READ\", \"EMPLOYEE_WRITE\", \"CONTRACT_READ\"]",
+                    example = "[\"EMPLOYEE_READ\", \"EMPLOYEE_WRITE\"]",
                     requiredMode = Schema.RequiredMode.REQUIRED
             )
             @NotNull
