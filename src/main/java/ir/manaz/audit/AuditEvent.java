@@ -30,4 +30,17 @@ public final class AuditEvent {
     public static final String ROLE_UPDATED = "ROLE_UPDATED";
     public static final String ROLE_DELETED = "ROLE_DELETED";
     public static final String ROLE_PERMISSIONS_UPDATED = "ROLE_PERMISSIONS_UPDATED";
+
+    // Project
+    public static final String PROJECT_CREATED   = "PROJECT_CREATED";
+    public static final String PROJECT_UPDATED   = "PROJECT_UPDATED";
+    public static final String PROJECT_ARCHIVED  = "PROJECT_ARCHIVED";
+    public static final String PROJECT_RESTORED  = "PROJECT_RESTORED";
+
+    //employee
+    public static final String EMPLOYEE_CREATED     = "EMPLOYEE_CREATED";
+    public static final String EMPLOYEE_UPDATED     = "EMPLOYEE_UPDATED";
+    public static final String EMPLOYEE_DEACTIVATED = "EMPLOYEE_DEACTIVATED";
+    public static final String EMPLOYEE_REACTIVATED = "EMPLOYEE_REACTIVATED";
+    public static final String EMPLOYEE_DELETED     = "EMPLOYEE_DELETED";
 }

@@ -54,4 +54,59 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
             @Param("newStartDate") LocalDate newStartDate,
             @Param("newEndDate") LocalDate newEndDate,
             @Param("excludeId") Long excludeId);
+
+
+    @Query("""
+        SELECT COUNT(c) FROM Contract c
+        WHERE c.tenantId = :tenantId
+          AND c.projectId = :projectId
+          AND c.voided = false
+          AND (c.endDate IS NULL OR c.endDate >= :today)
+        """)
+    long countActiveByProject(
+            @Param("tenantId") Long tenantId,
+            @Param("projectId") Long projectId,
+            @Param("today") LocalDate today
+    );
+
+    @Query("""
+        SELECT c.contractNumber FROM Contract c
+        WHERE c.tenantId = :tenantId
+          AND c.projectId = :projectId
+          AND c.voided = false
+          AND (c.endDate IS NULL OR c.endDate >= :today)
+        ORDER BY c.contractNumber
+        """)
+    List<String> findActiveContractNumbersByProject(
+            @Param("tenantId") Long tenantId,
+            @Param("projectId") Long projectId,
+            @Param("today") LocalDate today
+    );
+
+    @Query("""
+    SELECT COUNT(c) FROM Contract c
+    WHERE c.tenantId = :tenantId
+      AND c.employeeId = :employeeId
+      AND c.voided = false
+      AND (c.endDate IS NULL OR c.endDate >= :today)
+    """)
+    long countActiveByEmployee(
+            @Param("tenantId") Long tenantId,
+            @Param("employeeId") Long employeeId,
+            @Param("today") LocalDate today
+    );
+
+    @Query("""
+    SELECT c.contractNumber FROM Contract c
+    WHERE c.tenantId = :tenantId
+      AND c.employeeId = :employeeId
+      AND c.voided = false
+      AND (c.endDate IS NULL OR c.endDate >= :today)
+    ORDER BY c.contractNumber
+    """)
+    List<String> findActiveContractNumbersByEmployee(
+            @Param("tenantId") Long tenantId,
+            @Param("employeeId") Long employeeId,
+            @Param("today") LocalDate today
+    );
 }
