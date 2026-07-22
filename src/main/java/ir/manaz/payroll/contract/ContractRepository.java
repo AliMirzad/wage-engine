@@ -109,4 +109,10 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
             @Param("employeeId") Long employeeId,
             @Param("today") LocalDate today
     );
+
+    Page<Contract> findByTenantId(Long tenantId, Pageable pageable);
+
+    long countByTenantId(Long tenantId);
+
+    boolean existsByTenantIdAndPreviousContractId(Long tenantId, Long previousContractId);
 }

@@ -126,6 +126,9 @@ public class Contract extends BaseEntity implements TenantAware {
     @Column(name = "void_reason", columnDefinition = "TEXT")
     private String voidReason;
 
+    @Column(name = "previous_contract_id")
+    private Long previousContractId;
+
     // ---------- derived ----------
 
     /** Not persisted — computed each call. Use this for authoritative "is active" checks. */

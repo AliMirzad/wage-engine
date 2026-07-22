@@ -43,4 +43,10 @@ public final class AuditEvent {
     public static final String EMPLOYEE_DEACTIVATED = "EMPLOYEE_DEACTIVATED";
     public static final String EMPLOYEE_REACTIVATED = "EMPLOYEE_REACTIVATED";
     public static final String EMPLOYEE_DELETED     = "EMPLOYEE_DELETED";
+
+    //contract
+    public static final String CONTRACT_CREATED = "CONTRACT_CREATED";
+    public static final String CONTRACT_UPDATED = "CONTRACT_UPDATED";
+    public static final String CONTRACT_ENDED   = "CONTRACT_ENDED";
+    public static final String CONTRACT_VOIDED  = "CONTRACT_VOIDED";
 }
