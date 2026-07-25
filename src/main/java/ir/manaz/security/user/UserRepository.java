@@ -8,15 +8,13 @@ import java.util.Optional;
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    Optional<User> findByUsername(String username);
+    boolean existsByUsernameIgnoreCase(String username);
 
-    Optional<User> findByEmail(String email);
+    boolean existsByEmailIgnoreCase(String email);
 
-    Optional<User> findByUsernameAndTenantId(String username, Long tenantId);
+    Optional<User> findByUsernameIgnoreCase(String username);
 
-    boolean existsByUsernameAndTenantId(String username, Long tenantId);
-
-    boolean existsByEmailAndTenantId(String email, Long tenantId);
+    Optional<User> findByEmailIgnoreCase(String email);
 
     long countByRoles_Id(Long roleId);
 }

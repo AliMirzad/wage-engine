@@ -60,7 +60,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest req) {
-        return build(HttpStatus.CONFLICT, "error.data_integrity", null, req);
+        String cause = ex.getMostSpecificCause().getMessage();
+        String code = "error.data_integrity";
+        if (cause != null) {
+            if (cause.contains("uk_users_username_lower"))      code = "user.username.duplicate";
+            else if (cause.contains("uk_users_email_lower"))    code = "user.email.duplicate";
+            else if (cause.contains("uk_roles_name_system")
+                    || cause.contains("uk_roles_name_tenanted"))  code = "role.name.duplicate";
+        }
+        return build(HttpStatus.CONFLICT, code, null, req);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

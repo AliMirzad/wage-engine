@@ -11,10 +11,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "users", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_user_tenant_username", columnNames = {"tenant_id", "username"}),
-        @UniqueConstraint(name = "uk_user_tenant_email", columnNames = {"tenant_id", "email"})
-})
+@Table(name = "users")
 @Getter
 @Setter
 @NoArgsConstructor

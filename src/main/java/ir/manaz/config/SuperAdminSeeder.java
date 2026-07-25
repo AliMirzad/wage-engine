@@ -47,7 +47,7 @@ public class SuperAdminSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) {
         if (!enabled) return;
-        if (userRepository.findByUsername(username).isPresent()) return;
+        if (userRepository.findByUsernameIgnoreCase(username).isPresent()) return;
 
         Role superAdmin = roleRepository.findByNameAndTenantIdIsNull(DefaultRoles.SUPER_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("SUPER_ADMIN role missing"));

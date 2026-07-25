@@ -21,12 +21,19 @@ public class LoginAttemptService {
 
     @Transactional
     public void loginFailed(String usernameOrEmail) {
-        userRepository.findByUsername(usernameOrEmail)
-                .or(() -> userRepository.findByEmail(usernameOrEmail))
+        userRepository.findByUsernameIgnoreCase(usernameOrEmail)
+                .or(() -> userRepository.findByEmailIgnoreCase(usernameOrEmail))
                 .ifPresent(this::increment);
     }
 
     private void increment(User user) {
+        Instant until = user.getLockedUntil();
+        if (until != null && until.isBefore(Instant.now())) {
+            user.setFailedLoginAttempts(0);
+            user.setAccountNonLocked(true);
+            user.setLockedUntil(null);
+        }
+
         int attempts = user.getFailedLoginAttempts() + 1;
         user.setFailedLoginAttempts(attempts);
 
@@ -42,8 +49,8 @@ public class LoginAttemptService {
 
     @Transactional
     public void loginSucceeded(String usernameOrEmail) {
-        userRepository.findByUsername(usernameOrEmail)
-                .or(() -> userRepository.findByEmail(usernameOrEmail))
+        userRepository.findByUsernameIgnoreCase(usernameOrEmail)
+                .or(() -> userRepository.findByEmailIgnoreCase(usernameOrEmail))
                 .ifPresent(u -> {
                     u.setFailedLoginAttempts(0);
                     u.setAccountNonLocked(true);
@@ -55,8 +62,8 @@ public class LoginAttemptService {
 
     @Transactional(readOnly = true)
     public boolean isLocked(String usernameOrEmail) {
-        return userRepository.findByUsername(usernameOrEmail)
-                .or(() -> userRepository.findByEmail(usernameOrEmail))
+        return userRepository.findByUsernameIgnoreCase(usernameOrEmail)
+                .or(() -> userRepository.findByEmailIgnoreCase(usernameOrEmail))
                 .map(u -> {
                     if (u.isAccountNonLocked()) return false;
                     if (u.getLockedUntil() == null) return true;

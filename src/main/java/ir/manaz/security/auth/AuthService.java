@@ -61,15 +61,15 @@ public class AuthService {
     // ------------------------------- LOGIN -------------------------------
     @Transactional
     public LoginResponse login(LoginRequest req, HttpServletRequest httpReq) {
-        String key = req.usernameOrEmail();
+        String key = req.usernameOrEmail() == null ? "" : req.usernameOrEmail().trim().toLowerCase();
 
         if (loginAttemptService.isLocked(key)) {
             auditLogService.log(AuditEvent.LOGIN, AuditOutcome.DENIED, null, null, key, "Account locked");
             throw new UnauthorizedException("auth.account_locked");
         }
 
-        User user = userRepository.findByUsername(key)
-                .or(() -> userRepository.findByEmail(key))
+        User user = userRepository.findByUsernameIgnoreCase(key)
+                .or(() -> userRepository.findByEmailIgnoreCase(key))
                 .orElse(null);
 
         if (user == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
@@ -96,12 +96,13 @@ public class AuthService {
         Tenant tenant = tenantRepository.findByCode(req.tenantCode())
                 .orElseThrow(() -> new NotFoundException("tenant.not_found", req.tenantCode()));
 
-        if (userRepository.existsByUsernameAndTenantId(req.username(), tenant.getId())) {
+        String username = req.username().trim().toLowerCase();
+        String email    = req.email().trim().toLowerCase();
+
+        if (userRepository.existsByUsernameIgnoreCase(username))
             throw new ConflictException("user.username.duplicate");
-        }
-        if (userRepository.existsByEmailAndTenantId(req.email(), tenant.getId())) {
+        if (userRepository.existsByEmailIgnoreCase(email))
             throw new ConflictException("user.email.duplicate");
-        }
 
         Role employeeRole = roleRepository.findByNameAndTenantIdIsNull(DefaultRoles.EMPLOYEE)
                 .orElseThrow(() -> new IllegalStateException("system.role.default_missing"));
@@ -111,8 +112,8 @@ public class AuthService {
 
         User user = User.builder()
                 .tenantId(tenant.getId())
-                .username(req.username())
-                .email(req.email())
+                .username(username)
+                .email(email)
                 .passwordHash(passwordEncoder.encode(req.password()))
                 .firstName(req.firstName())
                 .lastName(req.lastName())
@@ -188,7 +189,7 @@ public class AuthService {
     @Transactional
     public void forgotPassword(ForgotPasswordRequest req) {
         // Always respond identically to avoid email enumeration
-        userRepository.findByEmail(req.email()).ifPresent(user -> {
+        userRepository.findByEmailIgnoreCase(req.email()).ifPresent(user -> {
             String rawToken = generateRawToken();
             String hash = sha256(rawToken);
 
@@ -256,9 +257,9 @@ public class AuthService {
         }
 
         Set<String> roles = user.getRoles().stream().map(Role::getName).collect(Collectors.toSet());
-        Set<String> perms = principal.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(a -> !a.startsWith("ROLE_"))
+        Set<String> perms = user.getRoles().stream()
+                .flatMap(r -> r.getPermissions().stream())
+                .map(Enum::name)
                 .collect(Collectors.toSet());
 
         UserInfo info = new UserInfo(
