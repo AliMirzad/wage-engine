@@ -39,8 +39,8 @@ public class DefaultRoles implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        seed(SUPER_ADMIN, "Full access across all tenants",
-                EnumSet.allOf(Permission.class));
+
+        syncSuperAdmin();
 
         seed(COMPANY_ADMIN, "Owner/admin of a single company",
                 EnumSet.of(
@@ -116,6 +116,29 @@ public class DefaultRoles implements CommandLineRunner {
                             .build();
                     roleRepository.save(role);
                     log.info("Seeded system role {} with {} permissions", name, perms.size());
+                }
+        );
+    }
+
+    private void syncSuperAdmin() {
+        var all = EnumSet.allOf(Permission.class);
+        roleRepository.findByNameAndTenantIdIsNull(SUPER_ADMIN).ifPresentOrElse(
+                existing -> {
+                    if (!existing.getPermissions().containsAll(all)) {
+                        existing.setPermissions(EnumSet.copyOf(all));
+                        roleRepository.save(existing);
+                        log.info("SUPER_ADMIN synced to all {} permissions", all.size());
+                    }
+                },
+                () -> {
+                    roleRepository.save(Role.builder()
+                            .name(SUPER_ADMIN)
+                            .description("Full access across all tenants")
+                            .systemRole(true)
+                            .tenantId(null)
+                            .permissions(EnumSet.copyOf(all))
+                            .build());
+                    log.info("Seeded system role SUPER_ADMIN with {} permissions", all.size());
                 }
         );
     }

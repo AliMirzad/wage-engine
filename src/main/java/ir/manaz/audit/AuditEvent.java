@@ -49,4 +49,11 @@ public final class AuditEvent {
     public static final String CONTRACT_UPDATED = "CONTRACT_UPDATED";
     public static final String CONTRACT_ENDED   = "CONTRACT_ENDED";
     public static final String CONTRACT_VOIDED  = "CONTRACT_VOIDED";
+
+    //tenant
+    // Tenant
+    public static final String TENANT_CREATED     = "TENANT_CREATED";
+    public static final String TENANT_UPDATED     = "TENANT_UPDATED";
+    public static final String TENANT_DEACTIVATED = "TENANT_DEACTIVATED";
+    public static final String TENANT_ACTIVATED   = "TENANT_ACTIVATED";
 }
