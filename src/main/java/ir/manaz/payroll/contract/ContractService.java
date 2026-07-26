@@ -8,11 +8,12 @@ import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
 import ir.manaz.payroll.contract.ContractDtos.*;
+
 import ir.manaz.payroll.employee.Employee;
 import ir.manaz.payroll.employee.EmployeeRepository;
 import ir.manaz.payroll.project.Project;
 import ir.manaz.payroll.project.ProjectRepository;
-import ir.manaz.security.user.CustomUserDetails;
+import ir.manaz.security.jwt.AuthenticatedPrincipal;
 import ir.manaz.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,8 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -71,6 +74,48 @@ public class ContractService {
                 .orElseThrow(() -> new NotFoundException("contract.not_found", id));
     }
 
+    /**
+     * کارگران یک پروژه — یعنی کسانی که روی آن قرارداد دارند.
+     * <p>
+     * کارمند مستقیماً به پروژه وصل نیست؛ اتصال از راه قرارداد است.
+     * صفحه‌بندی روی قرارداد است نه کارمند: در حالت پیش‌فرض هر کارمند
+     * حداکثر یک ردیف دارد (قاعده عدم تداخل تضمینش می‌کند)، و در حالت
+     * includeFormer هر ردیف یک دوره همکاری است.
+     */
+    public PageResponse<ProjectEmployeeResponse> listEmployeesByProject(Long projectId,
+                                                                        boolean includeFormer,
+                                                                        Pageable pageable) {
+        Long tenantId = requireTenantId();
+        projectRepository.findByIdAndTenantId(projectId, tenantId)
+                .orElseThrow(() -> new NotFoundException("project.not_found", projectId));
+
+        Page<Contract> contracts = includeFormer
+                ? contractRepository.findByTenantIdAndProjectIdAndVoidedFalse(tenantId, projectId, pageable)
+                : contractRepository.findActiveByProject(tenantId, projectId, LocalDate.now(), pageable);
+
+        if (contracts.isEmpty()) {
+            return PageResponse.of(Page.empty(pageable));
+        }
+
+        List<Long> employeeIds = contracts.getContent().stream()
+                .map(Contract::getEmployeeId).distinct().toList();
+
+        // یک کوئری برای همه کارمندان صفحه — نه N کوئری
+        Map<Long, Employee> byId = employeeRepository
+                .findByTenantIdAndIdIn(tenantId, employeeIds).stream()
+                .collect(Collectors.toMap(Employee::getId, e -> e));
+
+        return PageResponse.of(contracts.map(c -> {
+            Employee e = byId.get(c.getEmployeeId());
+            // کارمند حذف‌شده ولی قرارداد باقی‌مانده — فقط در حالت includeFormer ممکن است،
+            // چون delete در حضور قرارداد فعال مسدود می‌شود. ردیف حذف نمی‌شود تا
+            // شمارش صفحه‌بندی درست بماند و قرارداد از دید حسابدار پنهان نشود.
+            return e != null
+                    ? ProjectEmployeeResponse.of(c, e)
+                    : ProjectEmployeeResponse.deletedEmployee(c);
+        }));
+    }
+
     // ─── Mutations ───────────────────────────────────────────
 
     @Transactional
@@ -83,19 +128,41 @@ public class ContractService {
         if (!employee.isActive() || employee.getDeletedAt() != null) {
             throw new BusinessException("contract.employee.inactive");
         }
+        if (employee.getTerminationDate() != null) {
+            throw new BusinessException("contract.employee.terminated",
+                    employee.getPersonnelCode(), employee.getTerminationDate());
+        }
+        if (req.startDate().isBefore(employee.getHireDate())) {
+            throw new BusinessException("contract.start_date.before_hire",
+                    employee.getPersonnelCode(), employee.getHireDate());
+        }
 
         Project project = projectRepository.findByIdAndTenantId(req.projectId(), tenantId)
                 .orElseThrow(() -> new NotFoundException("contract.project.not_found"));
-        if (!project.isActive()) {
-            throw new BusinessException("contract.project.archived");
+
+        if (!project.getStatus().allowsNewContracts()) {
+            throw new BusinessException("contract.project.not_accepting",
+                    project.getCode(), project.getStatus().name());
         }
 
         // 2. اعتبارسنجی تاریخ‌ها
         validateDates(req.startDate(), req.endDate());
 
+        validateContractType(req.contractType(), req.endDate(), req.workingHoursPerWeek());
+
+        if (req.startDate().isBefore(project.getStartDate())) {
+            throw new BusinessException("contract.start_date.before_project",
+                    project.getCode(), project.getStartDate());
+        }
+        if (project.getEndDate() != null && req.startDate().isAfter(project.getEndDate())) {
+            throw new BusinessException("contract.start_date.after_project_end",
+                    project.getCode(), project.getEndDate());
+        }
+
         // 3. previousContractId اگه ارسال شده
         if (req.previousContractId() != null) {
-            validatePreviousContract(tenantId, req.previousContractId());
+            validatePreviousContract(tenantId, req.previousContractId(),
+                    req.employeeId(), req.projectId());
         }
 
         // 4. overlap check
@@ -126,13 +193,23 @@ public class ContractService {
                 .employeeId(req.employeeId())
                 .projectId(req.projectId())
                 .contractNumber(contractNumber)
+                .contractType(req.contractType() != null ? req.contractType() : ContractType.TEMPORARY)
+                .salaryBasis(req.salaryBasis() != null ? req.salaryBasis() : SalaryBasis.MONTHLY)
                 .baseSalary(req.baseSalary())
                 .housingAllowance(nullSafe(req.housingAllowance()))
                 .foodAllowance(nullSafe(req.foodAllowance()))
                 .childAllowanceBase(nullSafe(req.childAllowanceBase()))
+                .transportAllowance(nullSafe(req.transportAllowance()))
+                .seniorityPay(nullSafe(req.seniorityPay()))
+                .hardshipAllowance(nullSafe(req.hardshipAllowance()))
+                .workingHoursPerWeek(req.workingHoursPerWeek() != null
+                        ? req.workingHoursPerWeek() : new BigDecimal("44"))
                 .currency(req.currency() != null ? req.currency() : "IRR")
                 .startDate(req.startDate())
                 .endDate(req.endDate())
+                .signedDate(req.signedDate())
+                .probationEndDate(req.probationEndDate())
+                .jobTitle(req.jobTitle())
                 .previousContractId(req.previousContractId())
                 .terms(req.terms())
                 .notes(req.notes())
@@ -153,8 +230,11 @@ public class ContractService {
         Contract contract = contractRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new NotFoundException("contract.not_found", id));
 
-        contract.setNotes(req.notes());
-        contract.setTerms(req.terms());
+        // فیلدهای مالی و تاریخ‌ها تغییرناپذیرند — برای تغییر، قرارداد را خاتمه
+        // داده و قرارداد جدید با previousContractId بسازید (الزام حقوقی)
+        if (req.notes() != null) contract.setNotes(req.notes());
+        if (req.terms() != null) contract.setTerms(req.terms());
+        if (req.jobTitle() != null) contract.setJobTitle(req.jobTitle());
 
         audit(AuditEvent.CONTRACT_UPDATED, contract, null);
         return ContractResponse.from(contract);
@@ -209,18 +289,31 @@ public class ContractService {
         }
     }
 
-    private void validatePreviousContract(Long tenantId, Long previousId) {
+    /**
+     * زنجیره previousContractId فقط برای ادامه همان همکاری معنا دارد:
+     * همان کارمند، همان پروژه، قرارداد قبلی خاتمه‌یافته و غیرباطل،
+     * و بدون جانشین دیگر. بدون این قیود، زنجیره در گزارش سنوات
+     * و سوابق بیمه بی‌معنا می‌شود.
+     */
+    private void validatePreviousContract(Long tenantId, Long previousId,
+                                          Long employeeId, Long projectId) {
         Contract previous = contractRepository.findByIdAndTenantId(previousId, tenantId)
                 .orElseThrow(() -> new NotFoundException("contract.previous.not_found", previousId));
 
-        // قرارداد قبلی باید end شده باشد (endDate تعریف شده و در آینده نباشد)
-        if (previous.getEndDate() == null || previous.getEndDate().isAfter(LocalDate.now())) {
+        if (!previous.getEmployeeId().equals(employeeId)
+                || !previous.getProjectId().equals(projectId)) {
+            throw new BusinessException("contract.previous.different_pair",
+                    previous.getContractNumber());
+        }
+        if (previous.isVoided()) {
+            throw new BusinessException("contract.previous.voided", previous.getContractNumber());
+        }
+        if (previous.getEndDate() == null) {
             throw new BusinessException("contract.previous.must_be_ended");
         }
-
-        // یک قرارداد قبلی نباید دو successor داشته باشه
         if (contractRepository.existsByTenantIdAndPreviousContractId(tenantId, previousId)) {
-            throw new ConflictException("contract.previous.already_linked", previousId);
+            throw new ConflictException("contract.previous.already_linked",
+                    previous.getContractNumber());
         }
     }
 
@@ -229,7 +322,7 @@ public class ContractService {
      * TODO(deferred #5): race-prone؛ UNIQUE constraint در DB safety-net است.
      */
     private String generateContractNumber(Long tenantId) {
-        long next = contractRepository.countByTenantId(tenantId) + 1;
+        int next = contractRepository.findMaxContractSequence(tenantId) + 1;
         return String.format("CT-%d-%04d", tenantId, next);
     }
 
@@ -245,17 +338,19 @@ public class ContractService {
         return tenantId;
     }
 
-    private Long currentUserId() {
+    private AuthenticatedPrincipal principal() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof CustomUserDetails cud) {
-            return cud.getId();
-        }
-        return null;
+        return (auth != null && auth.getPrincipal() instanceof AuthenticatedPrincipal p) ? p : null;
+    }
+
+    private Long currentUserId() {
+        AuthenticatedPrincipal p = principal();
+        return p == null ? null : p.userId();
     }
 
     private String currentUsername() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth != null ? auth.getName() : null;
+        AuthenticatedPrincipal p = principal();
+        return p == null ? null : p.username();
     }
 
     private void audit(String event, Contract c, String details) {
@@ -277,4 +372,31 @@ public class ContractService {
         boolean bStartLeAEnd = (aEnd == null) || !bStart.isAfter(aEnd);
         return aStartLeBEnd && bStartLeAEnd;
     }
+
+    /**
+     * قواعد قانون کار:
+     * قرارداد موقت و آزمایشی باید تاریخ پایان داشته باشند؛ دائم نباید داشته باشد.
+     * ساعات کار هفتگی نمی‌تواند از سقف قانونی ۴۴ ساعت بیشتر باشد.
+     */
+    private void validateContractType(ContractType type, LocalDate endDate, BigDecimal weeklyHours) {
+        ContractType effective = type != null ? type : ContractType.TEMPORARY;
+
+        if (effective.requiresEndDate() && endDate == null) {
+            throw new BusinessException("contract.end_date.required_for_type", effective.name());
+        }
+        if (effective == ContractType.PERMANENT && endDate != null) {
+            throw new BusinessException("contract.end_date.not_allowed_for_permanent");
+        }
+        if (weeklyHours != null) {
+            if (weeklyHours.signum() <= 0) {
+                throw new BusinessException("contract.working_hours.invalid");
+            }
+            if (weeklyHours.compareTo(LEGAL_MAX_WEEKLY_HOURS) > 0) {
+                throw new BusinessException("contract.working_hours.exceeds_legal_max",
+                        LEGAL_MAX_WEEKLY_HOURS);
+            }
+        }
+    }
+
+    private static final BigDecimal LEGAL_MAX_WEEKLY_HOURS = new BigDecimal("44");
 }

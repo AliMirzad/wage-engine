@@ -2,20 +2,16 @@ package ir.manaz.payroll.project;
 
 import ir.manaz.common.BaseEntity;
 import ir.manaz.tenant.TenantAware;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * A project inside a tenant. Employees are assigned to projects through Contracts;
@@ -51,13 +47,51 @@ public class Project extends BaseEntity implements TenantAware {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false)
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
     @Builder.Default
-    private boolean active = true;
+    private ProjectStatus status = ProjectStatus.PLANNED;
 
-    @Column(name = "archived_at")
-    private Instant archivedAt;
+    /** نام کارفرما */
+    @Column(name = "client_name", length = 200)
+    private String clientName;
 
-    @Column(name = "archived_by")
-    private Long archivedBy;
+    /** شناسه ملی / کد اقتصادی کارفرما */
+    @Column(name = "client_national_id", length = 20)
+    private String clientNationalId;
+
+    /** شماره پیمان با کارفرما — متفاوت با contractNumber قراردادهای کارگران */
+    @Column(name = "client_contract_number", length = 64)
+    private String clientContractNumber;
+
+    @Column(name = "client_contract_date")
+    private LocalDate clientContractDate;
+
+    /** مبلغ کل پیمان — اطلاعات محرمانه، نیازمند PROJECT_FINANCIAL_READ */
+    @Column(name = "contract_amount", precision = 19, scale = 4)
+    private BigDecimal contractAmount;
+
+    @Column(name = "start_date", nullable = false)
+    private LocalDate startDate;
+
+    /** پایان پیش‌بینی‌شده. null یعنی نامحدود. */
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    /** پایان واقعی — هنگام خاتمه یا لغو ثبت می‌شود. */
+    @Column(name = "actual_end_date")
+    private LocalDate actualEndDate;
+
+    @Column(length = 255)
+    private String location;
+
+    @Column(columnDefinition = "TEXT")
+    private String notes;
+
+    /** زمان خاتمه یا لغو پروژه */
+    @Column(name = "closed_at")
+    private Instant closedAt;
+
+    @Column(name = "closed_by")
+    private Long closedBy;
 }

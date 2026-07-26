@@ -35,22 +35,6 @@ public class AuthController {
         return ResponseEntity.ok(authService.login(req, httpReq));
     }
 
-    @Operation(
-            summary = "ثبت‌نام کاربر جدید در tenant موجود",
-            description = "بعد از register اتوماتیک login می‌کند و access/refresh token برمی‌گرداند.",
-            security = {}
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "ثبت‌نام و ورود موفق"),
-            @ApiResponse(responseCode = "400", description = "داده نامعتبر (رمز policy را رعایت نمی‌کند و …)"),
-            @ApiResponse(responseCode = "409", description = "username یا email تکراری است")
-    })
-    @PostMapping("/register")
-    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest req,
-                                                  HttpServletRequest httpReq) {
-        return ResponseEntity.ok(authService.register(req, httpReq));
-    }
-
     @Operation(summary = "تعویض refresh token با access token جدید", security = {})
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "توکن‌های جدید صادر شد"),

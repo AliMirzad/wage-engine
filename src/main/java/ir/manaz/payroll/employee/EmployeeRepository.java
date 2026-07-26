@@ -7,7 +7,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
+import java.util.Collection;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -44,4 +46,29 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             """, nativeQuery = true)
     @QueryHints(@QueryHint(name = "org.hibernate.readOnly", value = "true"))
     Optional<Employee> findByIdIncludingDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    @Query(value = """
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(personnel_code, '-', 3) AS INTEGER)), 0)
+            FROM employees WHERE tenant_id = :tenantId
+            """, nativeQuery = true)
+    int findMaxPersonnelSequence(@Param("tenantId") Long tenantId);
+
+    List<Employee> findByTenantIdAndIdIn(Long tenantId, Collection<Long> ids);
+
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.tenantId = :tenantId
+              AND (:active IS NULL OR e.active = :active)
+              AND (:includeTerminated = true OR e.terminationDate IS NULL)
+              AND (:search IS NULL
+                   OR LOWER(e.firstName) LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR LOWER(e.lastName)  LIKE LOWER(CONCAT('%', :search, '%'))
+                   OR e.personnelCode    LIKE CONCAT('%', :search, '%')
+                   OR e.nationalId       LIKE CONCAT('%', :search, '%'))
+            """)
+    Page<Employee> search(@Param("tenantId") Long tenantId,
+                          @Param("active") Boolean active,
+                          @Param("includeTerminated") boolean includeTerminated,
+                          @Param("search") String search,
+                          Pageable pageable);
 }

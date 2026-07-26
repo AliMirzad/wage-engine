@@ -101,46 +101,6 @@ public class AuthService {
         return issueTokens(principal, user, httpReq, AuditEvent.LOGIN);
     }
 
-    // ------------------------------- REGISTER -------------------------------
-    @Transactional
-    public LoginResponse register(RegisterRequest req, HttpServletRequest httpReq) {
-        Tenant tenant = tenantRepository.findByCode(req.tenantCode())
-                .orElseThrow(() -> new NotFoundException("tenant.not_found", req.tenantCode()));
-
-        String username = req.username().trim().toLowerCase();
-        String email    = req.email().trim().toLowerCase();
-
-        if (userRepository.existsByUsernameIgnoreCase(username))
-            throw new ConflictException("user.username.duplicate");
-        if (userRepository.existsByEmailIgnoreCase(email))
-            throw new ConflictException("user.email.duplicate");
-
-        Role employeeRole = roleRepository.findByNameAndTenantIdIsNull(DefaultRoles.EMPLOYEE)
-                .orElseThrow(() -> new IllegalStateException("system.role.default_missing"));
-
-        Set<Role> roles = new HashSet<>();
-        roles.add(employeeRole);
-
-        User user = User.builder()
-                .tenantId(tenant.getId())
-                .username(username)
-                .email(email)
-                .passwordHash(passwordEncoder.encode(req.password()))
-                .firstName(req.firstName())
-                .lastName(req.lastName())
-                .enabled(true)
-                .accountNonLocked(true)
-                .passwordChangedAt(Instant.now())
-                .roles(roles)
-                .build();
-        user = userRepository.save(user);
-
-        auditLogService.log(AuditEvent.REGISTER, AuditOutcome.SUCCESS,
-                tenant.getId(), user.getId(), user.getUsername(), "New user registered");
-
-        return issueTokens(new CustomUserDetails(user), user, httpReq, null);
-    }
-
     // ------------------------------- REFRESH -------------------------------
     @Transactional
     public LoginResponse refresh(RefreshTokenRequest req, HttpServletRequest httpReq) {

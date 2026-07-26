@@ -2,14 +2,7 @@ package ir.manaz.payroll.contract;
 
 import ir.manaz.common.BaseEntity;
 import ir.manaz.tenant.TenantAware;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.Transient;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -92,6 +85,52 @@ public class Contract extends BaseEntity implements TenantAware {
     @Builder.Default
     private String currency = "IRR";
 
+    /**
+     * مبنای محاسبه حقوق پایه — تعیین می‌کند baseSalary در چه ضرب شود.
+     * MONTHLY: ثابت ماهانه، DAILY: × روزهای کارکرد، HOURLY: × ساعات کارکرد.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "salary_basis", nullable = false, length = 20)
+    @Builder.Default
+    private SalaryBasis salaryBasis = SalaryBasis.MONTHLY;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "contract_type", nullable = false, length = 20)
+    @Builder.Default
+    private ContractType contractType = ContractType.TEMPORARY;
+
+    /** حق ایاب و ذهاب */
+    @Column(name = "transport_allowance", nullable = false, precision = 19, scale = 4)
+    @Builder.Default
+    private BigDecimal transportAllowance = BigDecimal.ZERO;
+
+    /** پایه سنوات — قانوناً برای سابقه بیش از یک سال الزامی است */
+    @Column(name = "seniority_pay", nullable = false, precision = 19, scale = 4)
+    @Builder.Default
+    private BigDecimal seniorityPay = BigDecimal.ZERO;
+
+    /** حق بدی آب و هوا / سختی کار */
+    @Column(name = "hardship_allowance", nullable = false, precision = 19, scale = 4)
+    @Builder.Default
+    private BigDecimal hardshipAllowance = BigDecimal.ZERO;
+
+    /** ساعات کار هفتگی — مبنای محاسبه اضافه‌کاری. سقف قانونی ۴۴ ساعت. */
+    @Column(name = "working_hours_per_week", precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal workingHoursPerWeek = new BigDecimal("44");
+
+    /** تاریخ امضای قرارداد — ممکن است با تاریخ شروع متفاوت باشد */
+    @Column(name = "signed_date")
+    private LocalDate signedDate;
+
+    /** پایان دوره آزمایشی */
+    @Column(name = "probation_end_date")
+    private LocalDate probationEndDate;
+
+    /** سمت در این قرارداد — ممکن است با سمت عمومی کارمند متفاوت باشد */
+    @Column(name = "job_title", length = 100)
+    private String jobTitle;
+
     // ---------- validity window ----------
 
     @Column(name = "start_date", nullable = false)
@@ -129,13 +168,26 @@ public class Contract extends BaseEntity implements TenantAware {
     @Column(name = "previous_contract_id")
     private Long previousContractId;
 
-    // ---------- derived ----------
+// ---------- derived ----------
 
-    /** Not persisted — computed each call. Use this for authoritative "is active" checks. */
-    @Transient
+    /**
+     * تعریف مرجع «قرارداد فعال». محاسبه‌شونده، ذخیره نمی‌شود.
+     * <p>
+     * توجه: کوئری‌های {@code findActiveContractNumbersBy...} همین منطق را در SQL
+     * تکرار می‌کنند — هر تغییری اینجا باید آنجا هم اعمال شود.
+     */
     public boolean isActiveAsOf(LocalDate date) {
         if (voided) return false;
         if (startDate.isAfter(date)) return false;
         return endDate == null || !endDate.isBefore(date);
+    }
+
+    /** مجموع مزایای ثابت ماهانه (بدون حقوق پایه). */
+    public BigDecimal totalFixedAllowances() {
+        return housingAllowance
+                .add(foodAllowance)
+                .add(transportAllowance)
+                .add(seniorityPay)
+                .add(hardshipAllowance);
     }
 }

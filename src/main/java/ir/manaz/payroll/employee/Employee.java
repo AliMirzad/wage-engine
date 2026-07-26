@@ -3,13 +3,7 @@ package ir.manaz.payroll.employee;
 import ir.manaz.common.BaseEntity;
 import ir.manaz.common.SoftDeletable;
 import ir.manaz.tenant.TenantAware;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -85,6 +79,78 @@ public class Employee extends BaseEntity implements TenantAware, SoftDeletable {
     /** IBAN (شماره شبا) — IR + 24 digits. */
     @Column(length = 26)
     private String iban;
+
+    // ─── مؤثر در محاسبه حقوق ─────────────────────────────────
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "marital_status", nullable = false, length = 20)
+    @Builder.Default
+    private MaritalStatus maritalStatus = MaritalStatus.SINGLE;
+
+    /** شماره بیمه تأمین اجتماعی — بدون آن ارسال لیست بیمه ممکن نیست */
+    @Column(name = "insurance_number", length = 20)
+    private String insuranceNumber;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "insurance_type", nullable = false, length = 20)
+    @Builder.Default
+    private InsuranceType insuranceType = InsuranceType.MANDATORY;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "employment_type", nullable = false, length = 20)
+    @Builder.Default
+    private EmploymentType employmentType = EmploymentType.FULL_TIME;
+
+    /** سمت شغلی — روی فیش حقوقی و گروه‌بندی بیمه اثر دارد */
+    @Column(name = "job_title", length = 100)
+    private String jobTitle;
+
+    // ─── پرونده پرسنلی ───────────────────────────────────────
+
+    @Column(name = "father_name", length = 100)
+    private String fatherName;
+
+    /** شماره شناسنامه */
+    @Column(name = "id_card_number", length = 20)
+    private String idCardNumber;
+
+    /** محل صدور شناسنامه */
+    @Column(name = "issue_place", length = 100)
+    private String issuePlace;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "military_status", length = 20)
+    private MilitaryStatus militaryStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "education_level", length = 50)
+    private EducationLevel educationLevel;
+
+    @Column(length = 500)
+    private String address;
+
+    @Column(name = "emergency_contact_name", length = 100)
+    private String emergencyContactName;
+
+    @Column(name = "emergency_contact_phone", length = 20)
+    private String emergencyContactPhone;
+
+    /** نام بانک — کنار شبا برای تولید فایل بانکی */
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    // ─── ترک کار ─────────────────────────────────────────────
+
+    /**
+     * تاریخ ترک کار. متفاوت با {@code deletedAt}:
+     * این یعنی «از کار خارج شد» و رکورد باید بماند (برای سنوات و تسویه)،
+     * در حالی که {@code deletedAt} یعنی «اشتباه ثبت شده بود».
+     */
+    @Column(name = "termination_date")
+    private LocalDate terminationDate;
+
+    @Column(name = "termination_reason", length = 500)
+    private String terminationReason;
 
     @Column(nullable = false)
     @Builder.Default

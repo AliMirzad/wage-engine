@@ -45,8 +45,8 @@ public class DefaultRoles implements CommandLineRunner {
         seed(COMPANY_ADMIN, "Owner/admin of a single company",
                 EnumSet.of(
                         USER_READ, USER_WRITE, USER_DELETE,
-                        ROLE_READ, ROLE_WRITE,
-                        PROJECT_READ, PROJECT_WRITE,
+                        ROLE_READ,
+                        PROJECT_READ, PROJECT_WRITE, PROJECT_FINANCIAL_READ,
                         EMPLOYEE_READ, EMPLOYEE_WRITE, EMPLOYEE_DELETE,
                         CONTRACT_READ, CONTRACT_WRITE,
                         PERFORMANCE_READ, PERFORMANCE_WRITE,
@@ -73,7 +73,7 @@ public class DefaultRoles implements CommandLineRunner {
 
         seed(MANAGER, "CEO / management - reports only",
                 EnumSet.of(
-                        PROJECT_READ,
+                        PROJECT_READ, PROJECT_FINANCIAL_READ,
                         EMPLOYEE_READ,
                         PAYROLL_READ, PAYROLL_APPROVE,
                         PAYSLIP_READ_ALL,
