@@ -61,15 +61,15 @@ public class AuthService {
     // ------------------------------- LOGIN -------------------------------
     @Transactional
     public LoginResponse login(LoginRequest req, HttpServletRequest httpReq) {
-        String key = req.usernameOrEmail();
+        String key = req.usernameOrEmail() == null ? "" : req.usernameOrEmail().trim().toLowerCase();
 
         if (loginAttemptService.isLocked(key)) {
             auditLogService.log(AuditEvent.LOGIN, AuditOutcome.DENIED, null, null, key, "Account locked");
             throw new UnauthorizedException("auth.account_locked");
         }
 
-        User user = userRepository.findByUsername(key)
-                .or(() -> userRepository.findByEmail(key))
+        User user = userRepository.findByUsernameIgnoreCase(key)
+                .or(() -> userRepository.findByEmailIgnoreCase(key))
                 .orElse(null);
 
         if (user == null || !passwordEncoder.matches(req.password(), user.getPasswordHash())) {
@@ -84,49 +84,21 @@ public class AuthService {
             throw new UnauthorizedException("auth.account_disabled");
         }
 
+        if (user.getTenantId() != null) {
+            boolean tenantActive = tenantRepository.findById(user.getTenantId())
+                    .map(Tenant::isActive)
+                    .orElse(false);
+            if (!tenantActive) {
+                auditLogService.log(AuditEvent.LOGIN, AuditOutcome.DENIED,
+                        user.getTenantId(), user.getId(), user.getUsername(), "Tenant inactive");
+                throw new UnauthorizedException("auth.tenant_inactive");
+            }
+        }
+
         loginAttemptService.loginSucceeded(key);
 
         CustomUserDetails principal = new CustomUserDetails(user);
         return issueTokens(principal, user, httpReq, AuditEvent.LOGIN);
-    }
-
-    // ------------------------------- REGISTER -------------------------------
-    @Transactional
-    public LoginResponse register(RegisterRequest req, HttpServletRequest httpReq) {
-        Tenant tenant = tenantRepository.findByCode(req.tenantCode())
-                .orElseThrow(() -> new NotFoundException("tenant.not_found", req.tenantCode()));
-
-        if (userRepository.existsByUsernameAndTenantId(req.username(), tenant.getId())) {
-            throw new ConflictException("user.username.duplicate");
-        }
-        if (userRepository.existsByEmailAndTenantId(req.email(), tenant.getId())) {
-            throw new ConflictException("user.email.duplicate");
-        }
-
-        Role employeeRole = roleRepository.findByNameAndTenantIdIsNull(DefaultRoles.EMPLOYEE)
-                .orElseThrow(() -> new IllegalStateException("system.role.default_missing"));
-
-        Set<Role> roles = new HashSet<>();
-        roles.add(employeeRole);
-
-        User user = User.builder()
-                .tenantId(tenant.getId())
-                .username(req.username())
-                .email(req.email())
-                .passwordHash(passwordEncoder.encode(req.password()))
-                .firstName(req.firstName())
-                .lastName(req.lastName())
-                .enabled(true)
-                .accountNonLocked(true)
-                .passwordChangedAt(Instant.now())
-                .roles(roles)
-                .build();
-        user = userRepository.save(user);
-
-        auditLogService.log(AuditEvent.REGISTER, AuditOutcome.SUCCESS,
-                tenant.getId(), user.getId(), user.getUsername(), "New user registered");
-
-        return issueTokens(new CustomUserDetails(user), user, httpReq, null);
     }
 
     // ------------------------------- REFRESH -------------------------------
@@ -172,13 +144,14 @@ public class AuthService {
         if (!passwordEncoder.matches(req.currentPassword(), user.getPasswordHash())) {
             auditLogService.log(AuditEvent.PASSWORD_CHANGE, AuditOutcome.FAILURE,
                     user.getTenantId(), user.getId(), user.getUsername(), "Wrong current password");
-            throw new BusinessException("auth.password.current.wrong");
+            throw new UnauthorizedException("auth.password.current.wrong");
         }
         user.setPasswordHash(passwordEncoder.encode(req.newPassword()));
         user.setPasswordChangedAt(Instant.now());
         userRepository.save(user);
 
         refreshTokenService.revokeAllForUser(user.getId());
+        resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
 
         auditLogService.log(AuditEvent.PASSWORD_CHANGE, AuditOutcome.SUCCESS,
                 user.getTenantId(), user.getId(), user.getUsername(), null);
@@ -188,7 +161,8 @@ public class AuthService {
     @Transactional
     public void forgotPassword(ForgotPasswordRequest req) {
         // Always respond identically to avoid email enumeration
-        userRepository.findByEmail(req.email()).ifPresent(user -> {
+        userRepository.findByEmailIgnoreCase(req.email()).ifPresent(user -> {
+            resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
             String rawToken = generateRawToken();
             String hash = sha256(rawToken);
 
@@ -230,14 +204,22 @@ public class AuthService {
         user.setLockedUntil(null);
         userRepository.save(user);
 
-        token.setUsed(true);
-        token.setUsedAt(Instant.now());
-        resetTokenRepository.save(token);
+        resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
 
         refreshTokenService.revokeAllForUser(user.getId());
 
         auditLogService.log(AuditEvent.PASSWORD_RESET_COMPLETE, AuditOutcome.SUCCESS,
                 user.getTenantId(), user.getId(), user.getUsername(), null);
+    }
+
+    @Transactional(readOnly = true)
+    public UserInfo me(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("auth.user_not_found"));
+        if (!user.isEnabled()) {
+            throw new UnauthorizedException("auth.account_disabled");
+        }
+        return toUserInfo(user);
     }
 
     // ------------------------------- HELPERS -------------------------------
@@ -255,16 +237,8 @@ public class AuthService {
                     user.getTenantId(), user.getId(), user.getUsername(), null);
         }
 
-        Set<String> roles = user.getRoles().stream().map(Role::getName).collect(Collectors.toSet());
-        Set<String> perms = principal.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(a -> !a.startsWith("ROLE_"))
-                .collect(Collectors.toSet());
+        UserInfo info = toUserInfo(user);
 
-        UserInfo info = new UserInfo(
-                user.getId(), user.getTenantId(), user.getUsername(), user.getEmail(),
-                user.getFirstName(), user.getLastName(), roles, perms
-        );
         return new LoginResponse(access, refresh, "Bearer",
                 props.getJwt().getAccessTokenExpiration() / 1000, info);
     }
@@ -291,5 +265,19 @@ public class AuthService {
         String h = req.getHeader("X-Forwarded-For");
         if (h != null && !h.isBlank()) return h.split(",")[0].trim();
         return req.getRemoteAddr();
+    }
+
+    private UserInfo toUserInfo(User user) {
+        Set<String> roles = user.getRoles().stream()
+                .map(Role::getName)
+                .collect(Collectors.toSet());
+        Set<String> perms = user.getRoles().stream()
+                .flatMap(r -> r.getPermissions().stream())
+                .map(Enum::name)
+                .collect(Collectors.toSet());
+        return new UserInfo(
+                user.getId(), user.getTenantId(), user.getUsername(), user.getEmail(),
+                user.getFirstName(), user.getLastName(), roles, perms
+        );
     }
 }

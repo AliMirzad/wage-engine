@@ -115,4 +115,27 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
     long countByTenantId(Long tenantId);
 
     boolean existsByTenantIdAndPreviousContractId(Long tenantId, Long previousContractId);
+
+    @Query(value = """
+            SELECT COALESCE(MAX(CAST(SPLIT_PART(contract_number, '-', 3) AS INTEGER)), 0)
+            FROM contracts WHERE tenant_id = :tenantId
+            """, nativeQuery = true)
+    int findMaxContractSequence(@Param("tenantId") Long tenantId);
+
+    /** قراردادهای فعال یک پروژه در تاریخ داده‌شده. */
+    @Query("""
+            SELECT c FROM Contract c
+            WHERE c.tenantId = :tenantId
+              AND c.projectId = :projectId
+              AND c.voided = false
+              AND c.startDate <= :date
+              AND (c.endDate IS NULL OR c.endDate >= :date)
+            """)
+    Page<Contract> findActiveByProject(@Param("tenantId") Long tenantId,
+                                       @Param("projectId") Long projectId,
+                                       @Param("date") LocalDate date,
+                                       Pageable pageable);
+
+    /** همه قراردادهای غیرباطل یک پروژه — شامل خاتمه‌یافته‌ها. */
+    Page<Contract> findByTenantIdAndProjectIdAndVoidedFalse(Long tenantId, Long projectId, Pageable pageable);
 }

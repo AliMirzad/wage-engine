@@ -37,5 +37,24 @@ public class Tenant extends BaseEntity {
     private String nationalId;
 
     @Column(nullable = false)
+    @Builder.Default
     private boolean active = true;
+
+    /** کد کارگاه تأمین اجتماعی — برای ارسال لیست بیمه */
+    @Column(name = "insurance_workshop_code", length = 20)
+    private String insuranceWorkshopCode;
+
+    /** کد اقتصادی / شناسه مالیاتی — برای لیست مالیات حقوق */
+    @Column(name = "economic_code", length = 20)
+    private String economicCode;
+
+    /** شبای شرکت — مبدأ پرداخت در فایل پایا/ساتنا */
+    @Column(length = 26)
+    private String iban;
+
+    @Column(length = 500)
+    private String address;
+
+    @Column(length = 20)
+    private String phone;
 }

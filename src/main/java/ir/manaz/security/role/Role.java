@@ -8,9 +8,7 @@ import java.util.EnumSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "roles", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_role_tenant_name", columnNames = {"tenant_id", "name"})
-})
+@Table(name = "roles")
 @Getter
 @Setter
 @NoArgsConstructor
@@ -36,6 +34,7 @@ public class Role extends BaseEntity {
     private String description;
 
     @Column(name = "system_role", nullable = false)
+    @Builder.Default
     private boolean systemRole = false;
 
     @ElementCollection(targetClass = Permission.class, fetch = FetchType.EAGER)

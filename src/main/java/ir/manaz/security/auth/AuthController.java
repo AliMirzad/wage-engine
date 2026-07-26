@@ -3,6 +3,7 @@ package ir.manaz.security.auth;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import ir.manaz.security.auth.dto.AuthDtos;
 import ir.manaz.security.auth.dto.AuthDtos.*;
 import ir.manaz.security.jwt.AuthenticatedPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,29 +27,12 @@ public class AuthController {
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "احراز هویت موفق"),
-            @ApiResponse(responseCode = "401", description = "نام کاربری یا رمز اشتباه"),
-            @ApiResponse(responseCode = "429", description = "تلاش‌های ناموفق زیاد — قفل موقت")
+            @ApiResponse(responseCode = "401", description = "نام کاربری/رمز اشتباه (code=auth.invalid_credentials) یا حساب قفل‌شده (code=auth.account_locked)")
     })
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest req,
                                                HttpServletRequest httpReq) {
         return ResponseEntity.ok(authService.login(req, httpReq));
-    }
-
-    @Operation(
-            summary = "ثبت‌نام کاربر جدید در tenant موجود",
-            description = "بعد از register اتوماتیک login می‌کند و access/refresh token برمی‌گرداند.",
-            security = {}
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "ثبت‌نام و ورود موفق"),
-            @ApiResponse(responseCode = "400", description = "داده نامعتبر (رمز policy را رعایت نمی‌کند و …)"),
-            @ApiResponse(responseCode = "409", description = "username یا email تکراری است")
-    })
-    @PostMapping("/register")
-    public ResponseEntity<LoginResponse> register(@Valid @RequestBody RegisterRequest req,
-                                                  HttpServletRequest httpReq) {
-        return ResponseEntity.ok(authService.register(req, httpReq));
     }
 
     @Operation(summary = "تعویض refresh token با access token جدید", security = {})
@@ -108,7 +92,12 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "تعیین رمز جدید با استفاده از reset token", security = {})
+    @Operation(summary = "تعیین رمز جدید با استفاده از reset token", security = {},
+            description = """
+                    پس از تغییر رمز، همه‌ی refresh tokenها از جمله نشست فعلی revoke می‌شوند.
+                    access token فعلی تا انقضا (۱۵ دقیقه) معتبر می‌ماند ولی قابل تمدید نیست،
+                    پس فرانت باید بعد از پاسخ موفق کاربر را logout کرده و به صفحه ورود بفرستد.
+                    """)
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "رمز عوض شد؛ همه session ها revoke شدند"),
             @ApiResponse(responseCode = "400", description = "رمز policy را رعایت نمی‌کند"),
@@ -118,5 +107,24 @@ public class AuthController {
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest req) {
         authService.resetPassword(req);
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(
+            summary = "پروفایل و دسترسی‌های کاربر جاری",
+            description = """
+                    اطلاعات کاربر احراز‌شده را همراه با نقش‌ها و لیست flat دسترسی‌ها برمی‌گرداند.
+                    داده از دیتابیس خوانده می‌شود، نه از claimهای توکن — پس اگر ادمین
+                    دسترسی‌های نقش را تغییر داده باشد، نتیجه‌ی این endpoint فوراً به‌روز است
+                    (بدون انتظار برای انقضای access token).
+                    فرانت باید در هر بار بارگذاری پنل این را صدا بزند و برای رندر منو از آن استفاده کند.
+                    """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "پروفایل کاربر بازگردانده شد"),
+            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است یا حساب غیرفعال شده")
+    })
+    @GetMapping("/me")
+    public AuthDtos.UserInfo me(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
+        return authService.me(principal.userId());
     }
 }

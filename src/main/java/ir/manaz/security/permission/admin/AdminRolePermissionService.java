@@ -70,6 +70,10 @@ public class AdminRolePermissionService {
             throw new ConflictException("role.name.reserved", req.name());
         }
 
+        if (collidesWithPermissionAuthority(req.name())) {
+            throw new ConflictException("role.name.collides_permission", req.name());
+        }
+
         // 2. Validate permission codes (may be empty list)
         Set<Permission> perms = validateAndConvert(req.permissionCodes());
 
@@ -121,6 +125,11 @@ public class AdminRolePermissionService {
             if (isSystemRoleName(req.name())) {
                 throw new ConflictException("role.name.reserved", req.name());
             }
+
+            if (collidesWithPermissionAuthority(req.name())) {
+                throw new ConflictException("role.name.collides_permission", req.name());
+            }
+
             role.setName(req.name());
             changed = true;
         }
@@ -163,10 +172,10 @@ public class AdminRolePermissionService {
 
         Set<Permission> newPerms = validateAndConvert(newCodes);
 
-        // Safety: SUPER_ADMIN must keep ROLE_WRITE or nobody can manage roles anymore
-        if (DefaultRoles.SUPER_ADMIN.equals(role.getName())
-                && !newPerms.contains(Permission.ROLE_WRITE)) {
-            throw new BusinessException("permission.super_admin.cannot_remove_role_write");
+        // SUPER_ADMIN permissions are immutable — DefaultRoles.syncSuperAdmin()
+        // forces allOf() on every boot, so any change here would silently revert.
+        if (DefaultRoles.SUPER_ADMIN.equals(role.getName()) && role.getTenantId() == null) {
+            throw new BusinessException("role.super_admin.immutable_permissions");
         }
 
         String oldCodesStr = role.getPermissions().stream()
@@ -268,5 +277,17 @@ public class AdminRolePermissionService {
                 r.getTenantId(),
                 r.getPermissions().stream().map(Enum::name).collect(Collectors.toSet())
         );
+    }
+
+    /**
+     * buildAuthorities() نقش را به "ROLE_" + name تبدیل می‌کند. اگر نامی مثل WRITE
+     * انتخاب شود، authority حاصل ("ROLE_WRITE") با کد permission همنام تصادم
+     * می‌کند و به ارتقای ناخواسته دسترسی منجر می‌شود.
+     */
+    private boolean collidesWithPermissionAuthority(String name) {
+        if (name == null) return false;
+        String authority = "ROLE_" + name.trim().toUpperCase();
+        return EnumSet.allOf(Permission.class).stream()
+                .anyMatch(p -> p.authority().equals(authority));
     }
 }

@@ -12,10 +12,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Spring Security principal.
- * getAuthorities() returns BOTH:
- *   - ROLE_XXX (for role checks - hasRole)
- *   - permission names (for permission checks - hasAuthority)
+ * فقط برای تولید claimهای توکن استفاده می‌شود — هرگز وارد SecurityContext نمی‌شود.
+ * فیلتر JWT به‌جای این، AuthenticatedPrincipal را در context می‌گذارد.
+ * <p>
+ * چون AuthService احراز هویت را دستی انجام می‌دهد (بدون AuthenticationManager)،
+ * قراردادهای UserDetails مثل isAccountNonLocked/isEnabled به‌طور خودکار اعمال
+ * نمی‌شوند. نگهبان واقعی قفل حساب {@code LoginAttemptService.isLocked} است
+ * و بررسی فعال بودن حساب مستقیماً در {@code AuthService.login} انجام می‌شود.
  */
 @Getter
 public class CustomUserDetails implements UserDetails {

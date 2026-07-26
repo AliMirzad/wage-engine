@@ -1,13 +1,12 @@
 package ir.manaz.payroll.employee;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import ir.manaz.common.PageResponse;
-import ir.manaz.payroll.employee.EmployeeDtos.CreateEmployeeRequest;
-import ir.manaz.payroll.employee.EmployeeDtos.EmployeeResponse;
-import ir.manaz.payroll.employee.EmployeeDtos.UpdateEmployeeRequest;
+import ir.manaz.payroll.employee.EmployeeDtos.*;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -30,20 +29,31 @@ public class EmployeeController {
     @Operation(
             summary = "لیست کارمندان",
             description = """
-            بازگرداندن لیست تمام کارمندان شرکت جاری (فعال و غیرفعال) با صفحه‌بندی.
-            کارمندان حذف‌شده (soft-delete) به‌صورت خودکار از این لیست فیلتر می‌شوند.
-            پیش‌فرض صفحه‌بندی: size=20، مرتب‌سازی بر اساس createdAt نزولی.
+            فهرست کارمندان شرکت جاری با صفحه‌بندی.
+            به‌صورت پیش‌فرض کارمندان ترک‌کار‌کرده نمایش داده نمی‌شوند؛
+            برای دیدن آن‌ها includeTerminated=true بفرستید.
+            با active=true فقط فعال‌ها و با active=false فقط غیرفعال‌ها بازمی‌گردند؛
+            اگر ارسال نشود هر دو می‌آیند.
+            search روی نام، نام خانوادگی، کد پرسنلی و کد ملی جستجو می‌کند.
+            کارمندان حذف‌شده در هیچ حالتی بازنمی‌گردند.
             """
     )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "لیست با موفقیت بازگردانده شد"),
+            @ApiResponse(responseCode = "400", description = "کاربر به هیچ شرکتی تعلق ندارد"),
             @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
             @ApiResponse(responseCode = "403", description = "دسترسی EMPLOYEE_READ ندارید")
     })
     public PageResponse<EmployeeResponse> list(
+            @Parameter(description = "فیلتر فعال بودن — خالی یعنی هر دو")
+            @RequestParam(required = false) Boolean active,
+            @Parameter(description = "شامل کارمندان ترک‌کار‌کرده")
+            @RequestParam(defaultValue = "false") boolean includeTerminated,
+            @Parameter(description = "جستجو در نام، کد پرسنلی و کد ملی")
+            @RequestParam(required = false) String search,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return employeeService.list(pageable);
+        return employeeService.list(active, includeTerminated, search, pageable);
     }
 
     @GetMapping("/{id}")
@@ -86,9 +96,9 @@ public class EmployeeController {
     @Operation(
             summary = "ویرایش اطلاعات کارمند",
             description = """
-            ویرایش اطلاعات یک کارمند. کد ملی و کد پرسنلی تغییرناپذیر هستند
-            و در این endpoint قابل تغییر نیستند. تغییر این دو نیازمند حذف
-            کارمند و ایجاد مجدد است.
+            ویرایش اطلاعات کارمند. فقط فیلدهای ارسال‌شده به‌روز می‌شوند؛
+            فیلدهای ارسال‌نشده دست‌نخورده می‌مانند.
+            کد ملی و کد پرسنلی تغییرناپذیر هستند.
             """
     )
     @ApiResponses({
@@ -167,5 +177,59 @@ public class EmployeeController {
     })
     public void delete(@PathVariable Long id) {
         employeeService.delete(id);
+    }
+
+    @PostMapping("/{id}/terminate")
+    @PreAuthorize("hasAuthority('EMPLOYEE_WRITE')")
+    @Operation(
+            summary = "ثبت ترک کار کارمند",
+            description = """
+            ثبت پایان همکاری (استعفا، اخراج، پایان قرارداد).
+            برخلاف حذف، رکورد کارمند باقی می‌ماند چون برای محاسبه سنوات،
+            تسویه‌حساب و سوابق بیمه لازم است. کارمند به‌طور خودکار غیرفعال می‌شود.
+
+            اگر قرارداد فعالی وجود داشته باشد مسدود می‌شود (۴۰۹) و پیام خطا
+            شامل شماره قراردادهای مانع است — ابتدا باید آن‌ها خاتمه یابند.
+
+            برای بازگشت کارمند از endpoint rehire استفاده کنید، نه reactivate.
+            """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "ترک کار با موفقیت ثبت شد"),
+            @ApiResponse(responseCode = "400", description = "تاریخ ترک کار پیش از تاریخ استخدام است"),
+            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
+            @ApiResponse(responseCode = "403", description = "دسترسی EMPLOYEE_WRITE ندارید"),
+            @ApiResponse(responseCode = "404", description = "کارمند یافت نشد"),
+            @ApiResponse(responseCode = "409", description = "قبلاً ترک کار ثبت شده یا کارمند قرارداد فعال دارد")
+    })
+    public EmployeeResponse terminate(@PathVariable Long id,
+                                      @Valid @RequestBody TerminateEmployeeRequest req) {
+        return employeeService.terminate(id, req);
+    }
+
+    @PostMapping("/{id}/rehire")
+    @PreAuthorize("hasAuthority('EMPLOYEE_WRITE')")
+    @Operation(
+            summary = "استخدام مجدد کارمند",
+            description = """
+            بازگرداندن کارمندی که قبلاً ترک کار کرده، با تاریخ استخدام جدید.
+            رکورد جدید ساخته نمی‌شود — همان پرونده با کد پرسنلی قبلی ادامه می‌یابد،
+            چون سابقه بیمه به شخص وابسته است نه به رکورد.
+
+            تاریخ استخدام قبلی جایگزین می‌شود (طبق قانون کار، با تسویه سنوات
+            هنگام ترک کار سابقه صفر می‌شود) ولی در audit log ثبت می‌ماند.
+            """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "استخدام مجدد با موفقیت ثبت شد"),
+            @ApiResponse(responseCode = "400", description = "تاریخ استخدام جدید پیش از تاریخ ترک کار یا در آینده است"),
+            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
+            @ApiResponse(responseCode = "403", description = "دسترسی EMPLOYEE_WRITE ندارید"),
+            @ApiResponse(responseCode = "404", description = "کارمند یافت نشد"),
+            @ApiResponse(responseCode = "409", description = "این کارمند ترک کار نکرده است")
+    })
+    public EmployeeResponse rehire(@PathVariable Long id,
+                                   @Valid @RequestBody RehireEmployeeRequest req) {
+        return employeeService.rehire(id, req);
     }
 }

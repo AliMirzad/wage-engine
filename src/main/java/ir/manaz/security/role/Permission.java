@@ -26,6 +26,7 @@ public enum Permission {
     // Projects
     PROJECT_READ,
     PROJECT_WRITE,
+    PROJECT_FINANCIAL_READ,
 
     // Employees
     EMPLOYEE_READ,
@@ -63,6 +64,7 @@ public enum Permission {
 
     // Audit log
     AUDIT_LOG_READ;
+
 
     public String authority() {
         return name();

@@ -19,10 +19,7 @@ public final class AuthDtos {
             @NotBlank String usernameOrEmail,
 
             @Schema(example = "ChangeMe@123", format = "password")
-            @NotBlank String password,
-
-            @Schema(example = "acme", description = "اختیاری — اگر null باشد از user استخراج می‌شود")
-            String tenantCode
+            @NotBlank String password
     ) {}
 
     @Schema(description = "پاسخ ورود / refresh / register")

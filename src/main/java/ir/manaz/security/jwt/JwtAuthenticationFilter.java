@@ -57,13 +57,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         .map(SimpleGrantedAuthority::new)
                         .collect(Collectors.toList());
 
-                AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, tenantId, username);
+                Long effectiveTenantId = (tenantId == null || tenantId <= 0) ? null : tenantId;
+                AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, effectiveTenantId, username);
 
                 var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
-                if (tenantId != null && tenantId > 0) {
+                if (effectiveTenantId != null) {
                     TenantContext.setTenantId(tenantId);
                 }
             } catch (ExpiredJwtException e) {

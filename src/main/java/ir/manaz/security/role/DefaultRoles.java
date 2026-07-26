@@ -39,14 +39,14 @@ public class DefaultRoles implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        seed(SUPER_ADMIN, "Full access across all tenants",
-                EnumSet.allOf(Permission.class));
+
+        syncSuperAdmin();
 
         seed(COMPANY_ADMIN, "Owner/admin of a single company",
                 EnumSet.of(
                         USER_READ, USER_WRITE, USER_DELETE,
-                        ROLE_READ, ROLE_WRITE,
-                        PROJECT_READ, PROJECT_WRITE,
+                        ROLE_READ,
+                        PROJECT_READ, PROJECT_WRITE, PROJECT_FINANCIAL_READ,
                         EMPLOYEE_READ, EMPLOYEE_WRITE, EMPLOYEE_DELETE,
                         CONTRACT_READ, CONTRACT_WRITE,
                         PERFORMANCE_READ, PERFORMANCE_WRITE,
@@ -73,7 +73,7 @@ public class DefaultRoles implements CommandLineRunner {
 
         seed(MANAGER, "CEO / management - reports only",
                 EnumSet.of(
-                        PROJECT_READ,
+                        PROJECT_READ, PROJECT_FINANCIAL_READ,
                         EMPLOYEE_READ,
                         PAYROLL_READ, PAYROLL_APPROVE,
                         PAYSLIP_READ_ALL,
@@ -116,6 +116,29 @@ public class DefaultRoles implements CommandLineRunner {
                             .build();
                     roleRepository.save(role);
                     log.info("Seeded system role {} with {} permissions", name, perms.size());
+                }
+        );
+    }
+
+    private void syncSuperAdmin() {
+        var all = EnumSet.allOf(Permission.class);
+        roleRepository.findByNameAndTenantIdIsNull(SUPER_ADMIN).ifPresentOrElse(
+                existing -> {
+                    if (!existing.getPermissions().containsAll(all)) {
+                        existing.setPermissions(EnumSet.copyOf(all));
+                        roleRepository.save(existing);
+                        log.info("SUPER_ADMIN synced to all {} permissions", all.size());
+                    }
+                },
+                () -> {
+                    roleRepository.save(Role.builder()
+                            .name(SUPER_ADMIN)
+                            .description("Full access across all tenants")
+                            .systemRole(true)
+                            .tenantId(null)
+                            .permissions(EnumSet.copyOf(all))
+                            .build());
+                    log.info("Seeded system role SUPER_ADMIN with {} permissions", all.size());
                 }
         );
     }

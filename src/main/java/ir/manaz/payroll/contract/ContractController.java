@@ -1,11 +1,13 @@
 package ir.manaz.payroll.contract;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import ir.manaz.common.PageResponse;
 import ir.manaz.payroll.contract.ContractDtos.*;
+import ir.manaz.payroll.employee.EmployeeDtos;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -174,5 +176,37 @@ public class ContractController {
     })
     public void voidContract(@PathVariable Long id, @Valid @RequestBody VoidContractRequest req) {
         contractService.voidContract(id, req);
+    }
+
+    @GetMapping("/api/v1/projects/{projectId}/employees")
+    @PreAuthorize("hasAuthority('EMPLOYEE_READ')")
+    @Operation(
+            summary = "کارگران یک پروژه",
+            description = """
+            فهرست کارمندانی که روی این پروژه قرارداد دارند، به‌همراه اطلاعات
+            قرارداد همان پروژه (شماره قرارداد، سمت، نوع، حقوق پایه، بازه تاریخی).
+
+            کارمند مستقیماً به پروژه وصل نیست — اتصال از راه قرارداد است.
+            یک کارمند ممکن است هم‌زمان روی چند پروژه قرارداد داشته باشد.
+
+            به‌صورت پیش‌فرض فقط قراردادهای فعال امروز بازمی‌گردند و هر کارمند
+            حداکثر یک ردیف دارد. با includeFormer=true قراردادهای خاتمه‌یافته
+            هم می‌آیند و هر ردیف یک دوره همکاری است.
+            قراردادهای باطل‌شده در هیچ حالتی بازنمی‌گردند.
+            """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "فهرست کارگران پروژه"),
+            @ApiResponse(responseCode = "400", description = "کاربر به هیچ شرکتی تعلق ندارد"),
+            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
+            @ApiResponse(responseCode = "403", description = "دسترسی EMPLOYEE_READ ندارید"),
+            @ApiResponse(responseCode = "404", description = "پروژه یافت نشد")
+    })
+    public PageResponse<ProjectEmployeeResponse> listEmployeesByProject(
+            @PathVariable Long projectId,
+            @Parameter(description = "شامل قراردادهای خاتمه‌یافته")
+            @RequestParam(defaultValue = "false") boolean includeFormer,
+            @PageableDefault(size = 20, sort = "startDate", direction = Sort.Direction.DESC) Pageable pageable) {
+        return contractService.listEmployeesByProject(projectId, includeFormer, pageable);
     }
 }

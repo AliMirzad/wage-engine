@@ -18,6 +18,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import static ir.manaz.payroll.project.ProjectDtos.*;
+
 @Tag(name = "Projects", description = "مدیریت پروژه‌های شرکت")
 @RestController
 @RequestMapping("/api/v1/projects")
@@ -25,30 +27,6 @@ import org.springframework.web.bind.annotation.*;
 public class ProjectController {
 
     private final ProjectService projectService;
-
-    @GetMapping
-    @PreAuthorize("hasAuthority('PROJECT_READ')")
-    @Operation(
-            summary = "لیست پروژه‌ها",
-            description = """
-            بازگرداندن لیست پروژه‌های شرکت جاری با صفحه‌بندی.
-            به‌صورت پیش‌فرض فقط پروژه‌های فعال بازمی‌گردند.
-            برای دیدن پروژه‌های آرشیو‌شده در کنار فعال‌ها، پارامتر includeArchived=true را ارسال کنید.
-            پیش‌فرض صفحه‌بندی: size=20، مرتب‌سازی بر اساس createdAt نزولی.
-            """
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "لیست با موفقیت بازگردانده شد"),
-            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
-            @ApiResponse(responseCode = "403", description = "دسترسی PROJECT_READ ندارید")
-    })
-    public PageResponse<ProjectResponse> list(
-            @Parameter(description = "نمایش پروژه‌های آرشیو‌شده در کنار فعال‌ها")
-            @RequestParam(defaultValue = "false") boolean includeArchived,
-            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
-    ) {
-        return projectService.list(includeArchived, pageable);
-    }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('PROJECT_READ')")
@@ -85,8 +63,13 @@ public class ProjectController {
     @PreAuthorize("hasAuthority('PROJECT_WRITE')")
     @Operation(
             summary = "ویرایش پروژه",
-            description = "ویرایش نام و توضیحات پروژه. کد پروژه تغییرناپذیر است و در این endpoint قابل تغییر نیست."
-    )
+            description = """
+            ویرایش پروژه. فقط فیلدهای ارسال‌شده به‌روز می‌شوند.
+            کد پروژه و وضعیت از این مسیر قابل تغییر نیستند —
+            برای تغییر وضعیت از POST /{id}/status استفاده کنید.
+            مبلغ پیمان فقط توسط دارنده PROJECT_FINANCIAL_READ قابل ثبت است؛
+            در غیر این صورت مقدار ارسالی نادیده گرفته می‌شود و مقدار موجود دست‌نخورده می‌ماند.
+            """    )
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "پروژه با موفقیت ویرایش شد"),
             @ApiResponse(responseCode = "400", description = "خطای اعتبارسنجی ورودی"),
@@ -98,43 +81,60 @@ public class ProjectController {
         return projectService.update(id, req);
     }
 
-    @PostMapping("/{id}/archive")
-    @PreAuthorize("hasAuthority('PROJECT_WRITE')")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @GetMapping
+    @PreAuthorize("hasAuthority('PROJECT_READ')")
     @Operation(
-            summary = "آرشیو پروژه",
+            summary = "لیست پروژه‌ها",
             description = """
-            آرشیو کردن پروژه (active=false). پروژه حذف نمی‌شود و
-            سابقه قراردادهای مرتبط حفظ می‌ماند. برای بازگرداندن از endpoint restore استفاده کنید.
+            بازگرداندن لیست پروژه‌های شرکت جاری با صفحه‌بندی.
+            به‌صورت پیش‌فرض فقط پروژه‌های باز (PLANNED، ACTIVE، SUSPENDED) بازمی‌گردند.
+            برای دیدن پروژه‌های خاتمه‌یافته و لغوشده، پارامتر includeClosed=true را ارسال کنید.
+            مبلغ پیمان فقط برای دارندگان دسترسی PROJECT_FINANCIAL_READ پر می‌شود؛ برای بقیه null است.
+            پیش‌فرض صفحه‌بندی: size=20، مرتب‌سازی بر اساس createdAt نزولی.
             """
     )
     @ApiResponses({
-            @ApiResponse(responseCode = "204", description = "پروژه با موفقیت آرشیو شد"),
-            @ApiResponse(responseCode = "400", description = "پروژه از قبل آرشیو شده است"),
+            @ApiResponse(responseCode = "200", description = "لیست با موفقیت بازگردانده شد"),
+            @ApiResponse(responseCode = "400", description = "کاربر به هیچ شرکتی تعلق ندارد"),
+            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
+            @ApiResponse(responseCode = "403", description = "دسترسی PROJECT_READ ندارید")
+    })
+    public PageResponse<ProjectResponse> list(
+            @Parameter(description = "نمایش پروژه‌های خاتمه‌یافته و لغوشده در کنار بازها")
+            @RequestParam(defaultValue = "false") boolean includeClosed,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return projectService.list(includeClosed, pageable);
+    }
+
+    @PostMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('PROJECT_WRITE')")
+    @Operation(
+            summary = "تغییر وضعیت پروژه",
+            description = """
+            گذارهای مجاز:
+            PLANNED → ACTIVE, CANCELLED
+            ACTIVE → SUSPENDED, COMPLETED, CANCELLED
+            SUSPENDED → ACTIVE, COMPLETED, CANCELLED
+            COMPLETED / CANCELLED → ACTIVE (بازگشایی در صورت ثبت اشتباه)
+
+            ثبت قرارداد جدید فقط در وضعیت ACTIVE ممکن است.
+            رفتن به COMPLETED یا CANCELLED در صورت وجود قرارداد فعال مسدود می‌شود (۴۰۹)
+            و پیام خطا شماره قراردادهای مانع را فهرست می‌کند.
+            بازگشایی، قراردادهای خاتمه‌یافته را برنمی‌گرداند.
+            فیلد availableTransitions در پاسخ هر پروژه، گزینه‌های مجاز را برای نمایش در فرم مشخص می‌کند.
+            """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "وضعیت با موفقیت تغییر کرد"),
+            @ApiResponse(responseCode = "400", description = "گذار وضعیت غیرمجاز است"),
             @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
             @ApiResponse(responseCode = "403", description = "دسترسی PROJECT_WRITE ندارید"),
             @ApiResponse(responseCode = "404", description = "پروژه یافت نشد"),
-            @ApiResponse(responseCode = "409", description = "پروژه قراردادهای فعال دارد و قابل آرشیو نیست")
+            @ApiResponse(responseCode = "409", description = "وضعیت تکراری است یا پروژه قرارداد فعال دارد")
     })
-    public void archive(@PathVariable Long id) {
-        projectService.archive(id);
-    }
-
-    @PostMapping("/{id}/restore")
-    @PreAuthorize("hasAuthority('PROJECT_WRITE')")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(
-            summary = "بازگرداندن پروژه از آرشیو",
-            description = "پروژه‌ای که قبلاً آرشیو شده را به حالت فعال بازمی‌گرداند."
-    )
-    @ApiResponses({
-            @ApiResponse(responseCode = "204", description = "پروژه با موفقیت بازگردانده شد"),
-            @ApiResponse(responseCode = "400", description = "پروژه در حال حاضر آرشیو نشده است"),
-            @ApiResponse(responseCode = "401", description = "احراز هویت لازم است"),
-            @ApiResponse(responseCode = "403", description = "دسترسی PROJECT_WRITE ندارید"),
-            @ApiResponse(responseCode = "404", description = "پروژه یافت نشد")
-    })
-    public void restore(@PathVariable Long id) {
-        projectService.restore(id);
+    public ProjectResponse changeStatus(@PathVariable Long id,
+                                        @Valid @RequestBody ChangeStatusRequest req) {
+        return projectService.changeStatus(id, req);
     }
 }

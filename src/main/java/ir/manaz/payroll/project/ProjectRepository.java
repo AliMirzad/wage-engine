@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.Optional;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
@@ -12,7 +13,7 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     Page<Project> findByTenantId(Long tenantId, Pageable pageable);
 
-    Page<Project> findByTenantIdAndActive(Long tenantId, boolean active, Pageable pageable);
+    Page<Project> findByTenantIdAndStatusIn(Long tenantId, Collection<ProjectStatus> statuses, Pageable pageable);
 
     boolean existsByTenantIdAndCode(Long tenantId, String code);
 }

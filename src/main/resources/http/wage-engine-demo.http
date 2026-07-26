@@ -1,0 +1,1014 @@
+### =========================================================================
+###  سامانه دستمزد مناز — فلوی کامل دمو
+###
+###  ترتیب اجرا مهم است. هر بلاک را جداگانه اجرا کنید (دکمه سبز کنار ###).
+###  «Run All» توصیه نمی‌شود — IntelliJ متغیرها را زودهنگام ارزیابی می‌کند
+###  و بلاک‌های بعدی مقدار کهنه می‌بینند (Deferred #20).
+###
+###  پیش‌نیاز: دیتابیس تازه (V1 اجرا شده) و اپ در حال اجرا روی 8080.
+### =========================================================================
+
+@baseUrl = http://localhost:8080/api/v1
+@adminUser = admin
+@adminPass = ChangeMe@123
+
+### -------------------------------------------------------------------------
+### فاز ۱ — ورود مدیر پلتفرم
+### -------------------------------------------------------------------------
+
+### 1.1 ورود SUPER_ADMIN
+# انتظار: 200، لیست permissions باید ۳۰ مورد باشد (شامل PROJECT_FINANCIAL_READ)
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{adminUser}}",
+  "password": "{{adminPass}}"
+}
+
+> {%
+    client.global.set("saToken", response.body.accessToken);
+    client.global.set("saRefresh", response.body.refreshToken);
+    client.test("ورود موفق", () => client.assert(response.status === 200));
+    client.test("SUPER_ADMIN همه دسترسی‌ها را دارد", () =>
+        client.assert(response.body.user.permissions.length >= 30,
+            "تعداد دسترسی: " + response.body.user.permissions.length));
+%}
+
+### 1.2 بررسی حساسیت به بزرگی حروف
+# انتظار: 200 — ADMIN با admin یکی است
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "ADMIN",
+  "password": "{{adminPass}}"
+}
+
+### 1.3 رمز اشتباه
+# انتظار: 401 با code = auth.invalid_credentials
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "{{adminUser}}",
+  "password": "WrongPassword@1"
+}
+
+### 1.4 پروفایل کاربر جاری
+# انتظار: 200، tenantId = null، ۳۰ دسترسی
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{saToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۲ — ثبت شرکت مشتری
+### -------------------------------------------------------------------------
+
+### 2.1 ثبت شرکت + اولین مدیر
+# انتظار: 201، شرکت و کاربر COMPANY_ADMIN در یک تراکنش
+POST {{baseUrl}}/admin/tenants
+Authorization: Bearer {{saToken}}
+Content-Type: application/json
+
+{
+  "name": "شرکت ساختمانی آرمان بنا",
+  "code": "arman",
+  "nationalId": "10101234567",
+  "insuranceWorkshopCode": "9876543210",
+  "economicCode": "411111111111",
+  "iban": "IR820540102680020817909002",
+  "address": "تهران، خیابان ولیعصر، پلاک ۱۲۰",
+  "phone": "02188776655",
+  "adminUsername": "arman.admin",
+  "adminEmail": "admin@armanbana.ir",
+  "adminPassword": "Arman@1404",
+  "adminFirstName": "رضا",
+  "adminLastName": "کاظمی"
+}
+
+> {%
+    client.global.set("tenantId", response.body.id);
+    client.test("شرکت ساخته شد", () => client.assert(response.status === 201));
+    client.test("شرکت فعال است", () => client.assert(response.body.active === true,
+        "اگر false است یعنی @Builder.Default روی Tenant.active جا افتاده"));
+%}
+
+### 2.2 کد شرکت تکراری
+# انتظار: 409 با code = tenant.code.duplicate
+POST {{baseUrl}}/admin/tenants
+Authorization: Bearer {{saToken}}
+Content-Type: application/json
+
+{
+  "name": "شرکت دیگر",
+  "code": "arman",
+  "adminUsername": "other.admin",
+  "adminEmail": "other@example.com",
+  "adminPassword": "Other@1404"
+}
+
+### 2.3 نام کاربری تکراری (یکتایی سراسری)
+# انتظار: 409 با code = user.username.duplicate
+POST {{baseUrl}}/admin/tenants
+Authorization: Bearer {{saToken}}
+Content-Type: application/json
+
+{
+  "name": "شرکت سوم",
+  "code": "third",
+  "adminUsername": "arman.admin",
+  "adminEmail": "third@example.com",
+  "adminPassword": "Third@1404"
+}
+
+### 2.4 لیست شرکت‌ها
+GET {{baseUrl}}/admin/tenants
+Authorization: Bearer {{saToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۳ — ورود مدیر شرکت و تکمیل اطلاعات
+### -------------------------------------------------------------------------
+
+### 3.1 ورود مدیر شرکت
+# انتظار: 200، tenantId برابر شناسه شرکت، نقش COMPANY_ADMIN
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "arman.admin",
+  "password": "Arman@1404"
+}
+
+> {%
+    client.global.set("caToken", response.body.accessToken);
+    client.test("ورود مدیر شرکت", () => client.assert(response.status === 200));
+    client.test("به شرکت متصل است", () =>
+        client.assert(response.body.user.tenantId !== null));
+    client.test("ROLE_WRITE ندارد", () =>
+        client.assert(!response.body.user.permissions.includes("ROLE_WRITE"),
+            "V9 باید ROLE_WRITE را از COMPANY_ADMIN گرفته باشد"));
+%}
+
+### 3.2 مشاهده اطلاعات شرکت خودم
+# انتظار: 200، همان اطلاعاتی که در 2.1 ثبت شد
+GET {{baseUrl}}/my-company
+Authorization: Bearer {{caToken}}
+
+### 3.3 ویرایش اطلاعات شرکت
+# انتظار: 200 — فقط فیلدهای ارسالی عوض می‌شوند
+PUT {{baseUrl}}/my-company
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "phone": "02188776600",
+  "address": "تهران، سعادت‌آباد، بلوار دریا، پلاک ۴۵"
+}
+
+### 3.4 شبای نامعتبر
+# انتظار: 400
+PUT {{baseUrl}}/my-company
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "iban": "IR123"
+}
+
+### 3.5 SUPER_ADMIN روی my-company
+# انتظار: 400 با code = tenant.tenant_required (چون tenantId = null دارد)
+GET {{baseUrl}}/my-company
+Authorization: Bearer {{saToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۴ — ساخت حسابدار
+### -------------------------------------------------------------------------
+
+### 4.1 ساخت کاربر حسابدار
+# انتظار: 201 + initialPassword — این رمز فقط همین یک بار برمی‌گردد
+POST {{baseUrl}}/users
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "username": "arman.hesabdar",
+  "email": "hesabdar@armanbana.ir",
+  "firstName": "زهرا",
+  "lastName": "کریمی",
+  "roleNames": ["ACCOUNTANT"]
+}
+
+> {%
+    client.global.set("accPassword", response.body.initialPassword);
+    client.global.set("accUserId", response.body.user.id);
+    client.test("حسابدار ساخته شد", () => client.assert(response.status === 201));
+    client.test("رمز اولیه برگشت", () =>
+        client.assert(response.body.initialPassword &&
+                      response.body.initialPassword.length === 8));
+%}
+
+### 4.2 تلاش برای ساخت SUPER_ADMIN — باید مسدود شود
+# انتظار: 400 با code = user.role.not_assignable
+POST {{baseUrl}}/users
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "username": "evil.user",
+  "email": "evil@armanbana.ir",
+  "roleNames": ["SUPER_ADMIN"]
+}
+
+### 4.3 تلاش برای ساخت COMPANY_ADMIN دوم — باید مسدود شود
+# انتظار: 400 — مدیر شرکت نمی‌تواند مدیر دیگری بسازد
+POST {{baseUrl}}/users
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "username": "second.admin",
+  "email": "second@armanbana.ir",
+  "roleNames": ["COMPANY_ADMIN"]
+}
+
+### 4.4 لیست کاربران شرکت
+# انتظار: 200 — دو کاربر (مدیر و حسابدار)
+GET {{baseUrl}}/users
+Authorization: Bearer {{caToken}}
+
+### 4.5 ورود حسابدار با رمز اولیه
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "arman.hesabdar",
+  "password": "{{accPassword}}"
+}
+
+> {%
+    client.global.set("accToken", response.body.accessToken);
+    client.test("ورود حسابدار", () => client.assert(response.status === 200));
+    client.test("USER_WRITE ندارد", () =>
+        client.assert(!response.body.user.permissions.includes("USER_WRITE")));
+%}
+
+### 4.6 حسابدار لیست کاربران را ببیند — باید مسدود شود
+# انتظار: 403
+GET {{baseUrl}}/users
+Authorization: Bearer {{accToken}}
+
+### 4.7 تغییر رمز اولیه توسط حسابدار
+# انتظار: 204 — همه نشست‌ها باطل می‌شوند
+POST {{baseUrl}}/auth/change-password
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "currentPassword": "{{accPassword}}",
+  "newPassword": "Zahra@1404"
+}
+
+### 4.8 ورود مجدد با رمز جدید
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "arman.hesabdar",
+  "password": "Zahra@1404"
+}
+
+> {%
+    client.global.set("accToken", response.body.accessToken);
+%}
+
+
+### -------------------------------------------------------------------------
+### فاز ۵ — پروژه
+### -------------------------------------------------------------------------
+
+### 5.1 ساخت پروژه
+# انتظار: 201، وضعیت ACTIVE، contractAmount پر (حسابدار نیست، مدیر است)
+POST {{baseUrl}}/projects
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "name": "مجتمع مسکونی نارون",
+  "code": "P-001",
+  "description": "احداث ۴۰ واحد مسکونی در سه بلوک",
+  "startDate": "2026-03-21",
+  "endDate": "2027-09-22",
+  "clientName": "شرکت عمران گستر پارس",
+  "clientNationalId": "10987654321",
+  "clientContractNumber": "PMN-1404-88",
+  "clientContractDate": "2026-03-10",
+  "contractAmount": "125000000000",
+  "location": "تهران، شهرک غرب"
+}
+
+> {%
+    client.global.set("projectId", response.body.id);
+    client.test("پروژه ساخته شد", () => client.assert(response.status === 201));
+    client.test("وضعیت ACTIVE", () => client.assert(response.body.status === "ACTIVE"));
+    client.test("مدیر مبلغ پیمان را می‌بیند", () =>
+        client.assert(response.body.contractAmount !== null));
+%}
+
+### 5.2 پروژه دوم
+POST {{baseUrl}}/projects
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "name": "بازسازی ساختمان اداری مرکزی",
+  "code": "P-002",
+  "startDate": "2026-05-01",
+  "clientName": "بانک صادرات",
+  "location": "تهران، میدان آرژانتین"
+}
+
+> {%
+    client.global.set("project2Id", response.body.id);
+%}
+
+### 5.3 حسابدار پروژه را می‌بیند — ولی نه مبلغ پیمان
+# انتظار: 200 با contractAmount = null
+GET {{baseUrl}}/projects/{{projectId}}
+Authorization: Bearer {{accToken}}
+
+> {%
+    client.test("حسابدار مبلغ پیمان را نمی‌بیند", () =>
+        client.assert(response.body.contractAmount === null,
+            "PROJECT_FINANCIAL_READ نباید برای ACCOUNTANT باشد"));
+%}
+
+### 5.4 کد پروژه تکراری
+# انتظار: 409
+POST {{baseUrl}}/projects
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "name": "پروژه تکراری",
+  "code": "P-001",
+  "startDate": "2026-04-01"
+}
+
+### 5.5 لیست پروژه‌ها
+GET {{baseUrl}}/projects
+Authorization: Bearer {{accToken}}
+
+### 5.6 گذار وضعیت غیرمجاز
+# انتظار: 400 — از ACTIVE نمی‌شود به PLANNED رفت
+POST {{baseUrl}}/projects/{{project2Id}}/status
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "status": "PLANNED"
+}
+
+### 5.7 تعلیق پروژه دوم
+# انتظار: 200، availableTransitions باید ACTIVE/COMPLETED/CANCELLED بدهد
+POST {{baseUrl}}/projects/{{project2Id}}/status
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "status": "SUSPENDED",
+  "reason": "توقف موقت به دلیل تأخیر در تأمین مصالح"
+}
+
+### 5.8 بازگرداندن به ACTIVE
+POST {{baseUrl}}/projects/{{project2Id}}/status
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "status": "ACTIVE"
+}
+
+
+### -------------------------------------------------------------------------
+### فاز ۶ — کارمندان
+### -------------------------------------------------------------------------
+
+### 6.1 ثبت کارگر اول
+# انتظار: 201، personnelCode خودکار EMP-{tenantId}-0001
+POST {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "firstName": "علی",
+  "lastName": "محمدی",
+  "nationalId": "0084575948",
+  "birthDate": "1991-08-03",
+  "hireDate": "2026-03-21",
+  "phoneNumber": "09121234567",
+  "childrenCount": 2,
+  "iban": "IR120570028870010164111101",
+  "bankName": "پاسارگاد",
+  "maritalStatus": "MARRIED",
+  "insuranceNumber": "1234567890",
+  "insuranceType": "MANDATORY",
+  "employmentType": "FULL_TIME",
+  "jobTitle": "جوشکار درجه ۲",
+  "fatherName": "حسین",
+  "idCardNumber": "1234",
+  "issuePlace": "تهران",
+  "militaryStatus": "COMPLETED",
+  "educationLevel": "DIPLOMA",
+  "address": "تهران، نازی‌آباد",
+  "emergencyContactName": "فاطمه محمدی",
+  "emergencyContactPhone": "09129876543"
+}
+
+> {%
+    client.global.set("emp1Id", response.body.id);
+    client.global.set("emp1Code", response.body.personnelCode);
+    client.test("کارمند ساخته شد", () => client.assert(response.status === 201));
+    client.test("کد پرسنلی تولید شد", () =>
+        client.assert(response.body.personnelCode.startsWith("EMP-")));
+%}
+
+### 6.2 کارگر دوم
+POST {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "firstName": "حسن",
+  "lastName": "رضایی",
+  "nationalId": "0012345679",
+  "birthDate": "1985-02-14",
+  "hireDate": "2026-04-01",
+  "phoneNumber": "09351112233",
+  "childrenCount": 0,
+  "maritalStatus": "SINGLE",
+  "employmentType": "DAILY_WAGE",
+  "jobTitle": "بنا"
+}
+
+> {%
+    client.global.set("emp2Id", response.body.id);
+%}
+
+### 6.3 کد ملی نامعتبر (چک‌سام غلط)
+# انتظار: 400
+POST {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "firstName": "تست",
+  "lastName": "نامعتبر",
+  "nationalId": "1234567890",
+  "birthDate": "1990-01-01",
+  "hireDate": "2026-01-01"
+}
+
+### 6.4 کد ملی تکراری
+# انتظار: 409
+POST {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "firstName": "علی",
+  "lastName": "تکراری",
+  "nationalId": "0084575948",
+  "birthDate": "1990-01-01",
+  "hireDate": "2026-01-01"
+}
+
+### 6.5 تاریخ استخدام در آینده
+# انتظار: 400
+POST {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "firstName": "آینده",
+  "lastName": "نگر",
+  "nationalId": "0023456787",
+  "birthDate": "1990-01-01",
+  "hireDate": "2030-01-01"
+}
+
+### 6.6 ویرایش جزئی — فقط تلفن
+# انتظار: 200، بقیه فیلدها دست‌نخورده (jobTitle باید هنوز «جوشکار درجه ۲» باشد)
+PUT {{baseUrl}}/employees/{{emp1Id}}
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "phoneNumber": "09121110000"
+}
+
+> {%
+    client.test("ویرایش جزئی است", () =>
+        client.assert(response.body.jobTitle === "جوشکار درجه ۲",
+            "فیلدهای ارسال‌نشده نباید پاک شوند"));
+%}
+
+### 6.7 جستجو با نام
+GET {{baseUrl}}/employees?search=محمدی
+Authorization: Bearer {{accToken}}
+
+### 6.8 جستجو با کد پرسنلی
+GET {{baseUrl}}/employees?search={{emp1Code}}
+Authorization: Bearer {{accToken}}
+
+### 6.9 فقط کارمندان فعال
+GET {{baseUrl}}/employees?active=true
+Authorization: Bearer {{accToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۷ — قراردادها
+### -------------------------------------------------------------------------
+
+### 7.1 قرارداد اول — علی روی پروژه یک
+# انتظار: 201، contractNumber خودکار CT-{tenantId}-0001
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp1Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "MONTHLY",
+  "baseSalary": "71000000",
+  "housingAllowance": "9000000",
+  "foodAllowance": "14000000",
+  "childAllowanceBase": "3500000",
+  "transportAllowance": "3000000",
+  "seniorityPay": "2100000",
+  "hardshipAllowance": "0",
+  "workingHoursPerWeek": "44",
+  "startDate": "2026-03-21",
+  "endDate": "2027-03-20",
+  "signedDate": "2026-03-15",
+  "jobTitle": "جوشکار درجه ۲"
+}
+
+> {%
+    client.global.set("contract1Id", response.body.id);
+    client.global.set("contract1No", response.body.contractNumber);
+    client.test("قرارداد ساخته شد", () => client.assert(response.status === 201));
+    client.test("فعال است", () => client.assert(response.body.active === true));
+    client.test("مجموع مزایا محاسبه شد", () =>
+        client.assert(response.body.totalFixedAllowances !== null));
+%}
+
+### 7.2 همان کارگر روی پروژه دوم — باید مجاز باشد
+# انتظار: 201 — یک کارگر می‌تواند هم‌زمان روی چند پروژه باشد
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp1Id}},
+  "projectId": {{project2Id}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "MONTHLY",
+  "baseSalary": "30000000",
+  "startDate": "2026-05-01",
+  "endDate": "2026-11-01"
+}
+
+### 7.3 قرارداد دوم روی همان پروژه — باید مسدود شود
+# انتظار: 409 با code = contract.overlap و شماره قرارداد متداخل
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp1Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "MONTHLY",
+  "baseSalary": "80000000",
+  "startDate": "2026-06-01",
+  "endDate": "2026-12-01"
+}
+
+### 7.4 قرارداد پیش از تاریخ استخدام — باید مسدود شود
+# انتظار: 400 با code = contract.start_date.before_hire
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "DAILY",
+  "baseSalary": "2500000",
+  "startDate": "2026-01-01",
+  "endDate": "2026-12-01"
+}
+
+### 7.5 قرارداد دائم با تاریخ پایان — باید مسدود شود
+# انتظار: 400 با code = contract.end_date.not_allowed_for_permanent
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "PERMANENT",
+  "salaryBasis": "DAILY",
+  "baseSalary": "2500000",
+  "startDate": "2026-04-01",
+  "endDate": "2026-12-01"
+}
+
+### 7.6 ساعات کار بیش از سقف قانونی
+# انتظار: 400 با code = contract.working_hours.exceeds_legal_max
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "DAILY",
+  "baseSalary": "2500000",
+  "workingHoursPerWeek": "60",
+  "startDate": "2026-04-01",
+  "endDate": "2026-12-01"
+}
+
+### 7.7 قرارداد روزمزد برای کارگر دوم
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "DAILY",
+  "baseSalary": "2500000",
+  "housingAllowance": "9000000",
+  "foodAllowance": "14000000",
+  "startDate": "2026-04-01",
+  "endDate": "2026-12-01",
+  "jobTitle": "بنا"
+}
+
+> {%
+    client.global.set("contract2Id", response.body.id);
+%}
+
+### 7.8 ویرایش قرارداد — فقط یادداشت و سمت
+# انتظار: 200، baseSalary دست‌نخورده
+PUT {{baseUrl}}/contracts/{{contract1Id}}
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "notes": "قرارداد اولیه پروژه نارون",
+  "jobTitle": "جوشکار درجه ۱"
+}
+
+> {%
+    client.test("حقوق تغییر نکرد", () =>
+        client.assert(response.body.baseSalary === "71000000.0000" ||
+                      parseFloat(response.body.baseSalary) === 71000000));
+%}
+
+### 7.9 کارگران پروژه
+# انتظار: 200 — دو کارگر با شماره قرارداد و سمتشان
+GET {{baseUrl}}/projects/{{projectId}}/employees
+Authorization: Bearer {{accToken}}
+
+### 7.10 قراردادهای یک کارمند
+GET {{baseUrl}}/employees/{{emp1Id}}/contracts
+Authorization: Bearer {{accToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۸ — چرخه حیات: خاتمه، زنجیره، ابطال
+### -------------------------------------------------------------------------
+
+### 8.1 حذف کارمندی که قرارداد فعال دارد — باید مسدود شود
+# انتظار: 409 با فهرست شماره قراردادهای مانع
+DELETE {{baseUrl}}/employees/{{emp1Id}}
+Authorization: Bearer {{caToken}}
+
+### 8.2 خاتمه قرارداد اول
+# انتظار: 204
+POST {{baseUrl}}/contracts/{{contract1Id}}/end
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "endDate": "2026-09-22"
+}
+
+### 8.3 قرارداد جدید با زنجیره — افزایش حقوق
+# انتظار: 201 — روش قانونی تغییر حقوق
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp1Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "MONTHLY",
+  "baseSalary": "85000000",
+  "housingAllowance": "9000000",
+  "foodAllowance": "14000000",
+  "childAllowanceBase": "3500000",
+  "transportAllowance": "3500000",
+  "seniorityPay": "2800000",
+  "startDate": "2026-09-23",
+  "endDate": "2027-03-20",
+  "previousContractId": {{contract1Id}},
+  "notes": "افزایش حقوق مطابق مصوبه شورای عالی کار"
+}
+
+> {%
+    client.global.set("contract3Id", response.body.id);
+    client.test("زنجیره برقرار شد", () =>
+        client.assert(response.body.previousContractId !== null));
+%}
+
+### 8.4 زنجیره تکراری — باید مسدود شود
+# انتظار: 409 — هر قرارداد حداکثر یک جانشین دارد
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp1Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "MONTHLY",
+  "baseSalary": "90000000",
+  "startDate": "2026-10-01",
+  "endDate": "2027-03-20",
+  "previousContractId": {{contract1Id}}
+}
+
+### 8.5 زنجیره به کارمند دیگر — باید مسدود شود
+# انتظار: 400 با code = contract.previous.different_pair
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "DAILY",
+  "baseSalary": "3000000",
+  "startDate": "2027-01-01",
+  "endDate": "2027-06-01",
+  "previousContractId": {{contract1Id}}
+}
+
+### 8.6 ابطال قرارداد کارگر دوم
+# انتظار: 204
+POST {{baseUrl}}/contracts/{{contract2Id}}/void
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "reason": "اشتباه در ثبت مبلغ دستمزد روزانه"
+}
+
+### 8.7 ابطال دوباره — باید مسدود شود
+# انتظار: 400
+POST {{baseUrl}}/contracts/{{contract2Id}}/void
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "reason": "تکراری"
+}
+
+
+### -------------------------------------------------------------------------
+### فاز ۹ — چرخه حیات کارمند
+### -------------------------------------------------------------------------
+
+### 9.1 غیرفعال‌سازی موقت کارگر دوم
+# انتظار: 204
+POST {{baseUrl}}/employees/{{emp2Id}}/deactivate
+Authorization: Bearer {{accToken}}
+
+### 9.2 فعال‌سازی مجدد
+POST {{baseUrl}}/employees/{{emp2Id}}/reactivate
+Authorization: Bearer {{accToken}}
+
+### 9.3 ثبت ترک کار
+# انتظار: 200 — قرارداد کارگر دوم باطل شده پس مانعی نیست
+POST {{baseUrl}}/employees/{{emp2Id}}/terminate
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "terminationDate": "2026-07-20",
+  "terminationReason": "استعفا"
+}
+
+### 9.4 reactivate روی کارمند ترک‌کار‌کرده — باید مسدود شود
+# انتظار: 409 با code = employee.terminated.use_rehire
+POST {{baseUrl}}/employees/{{emp2Id}}/reactivate
+Authorization: Bearer {{accToken}}
+
+### 9.5 قرارداد برای کارمند ترک‌کار‌کرده — باید مسدود شود
+# انتظار: 400
+POST {{baseUrl}}/contracts
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "employeeId": {{emp2Id}},
+  "projectId": {{projectId}},
+  "contractType": "TEMPORARY",
+  "salaryBasis": "DAILY",
+  "baseSalary": "2500000",
+  "startDate": "2026-08-01",
+  "endDate": "2026-12-01"
+}
+
+### 9.6 لیست پیش‌فرض — ترک‌کار‌کرده نباید باشد
+GET {{baseUrl}}/employees
+Authorization: Bearer {{accToken}}
+
+### 9.7 لیست با ترک‌کار‌کرده‌ها
+GET {{baseUrl}}/employees?includeTerminated=true
+Authorization: Bearer {{accToken}}
+
+### 9.8 استخدام مجدد
+# انتظار: 200 — همان کد پرسنلی، تاریخ استخدام جدید
+POST {{baseUrl}}/employees/{{emp2Id}}/rehire
+Authorization: Bearer {{accToken}}
+Content-Type: application/json
+
+{
+  "hireDate": "2026-07-26",
+  "note": "بازگشت پس از تسویه"
+}
+
+
+### -------------------------------------------------------------------------
+### فاز ۱۰ — جداسازی شرکت‌ها و مسیر نجات
+### -------------------------------------------------------------------------
+
+### 10.1 ثبت شرکت دوم
+POST {{baseUrl}}/admin/tenants
+Authorization: Bearer {{saToken}}
+Content-Type: application/json
+
+{
+  "name": "شرکت راه‌سازی البرز",
+  "code": "alborz",
+  "adminUsername": "alborz.admin",
+  "adminEmail": "admin@alborz.ir",
+  "adminPassword": "Alborz@1404"
+}
+
+> {%
+    client.global.set("tenant2Id", response.body.id);
+%}
+
+### 10.2 ورود مدیر شرکت دوم
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "alborz.admin",
+  "password": "Alborz@1404"
+}
+
+> {%
+    client.global.set("ca2Token", response.body.accessToken);
+%}
+
+### 10.3 مدیر شرکت دوم پروژه شرکت اول را ببیند — باید نبیند
+# انتظار: 404 (نه 403) — از دید او این پروژه وجود ندارد
+GET {{baseUrl}}/projects/{{projectId}}
+Authorization: Bearer {{ca2Token}}
+
+### 10.4 لیست پروژه‌های شرکت دوم — باید خالی باشد
+GET {{baseUrl}}/projects
+Authorization: Bearer {{ca2Token}}
+
+> {%
+    client.test("جداسازی شرکت‌ها", () =>
+        client.assert(response.body.totalElements === 0,
+            "شرکت دوم نباید پروژه‌ای ببیند"));
+%}
+
+### 10.5 لیست کاربران شرکت اول توسط SUPER_ADMIN
+GET {{baseUrl}}/admin/tenants/{{tenantId}}/users
+Authorization: Bearer {{saToken}}
+
+### 10.6 بازنشانی رمز مدیر شرکت توسط SUPER_ADMIN
+# انتظار: 200 + رمز جدید — مسیر نجات وقتی مدیر رمزش را گم کرده
+POST {{baseUrl}}/admin/tenants/{{tenantId}}/users/{{accUserId}}/reset-password
+Authorization: Bearer {{saToken}}
+
+### 10.7 ارتقای حسابدار به مدیر شرکت
+# انتظار: 200 — وقتی مدیر قبلی رفته است
+POST {{baseUrl}}/admin/tenants/{{tenantId}}/users/{{accUserId}}/grant-company-admin
+Authorization: Bearer {{saToken}}
+
+
+### -------------------------------------------------------------------------
+### فاز ۱۱ — غیرفعال‌سازی شرکت
+### -------------------------------------------------------------------------
+
+### 11.1 غیرفعال کردن شرکت دوم
+# انتظار: 204
+POST {{baseUrl}}/admin/tenants/{{tenant2Id}}/deactivate
+Authorization: Bearer {{saToken}}
+
+### 11.2 ورود کاربر شرکت غیرفعال — باید مسدود شود
+# انتظار: 401 با code = auth.tenant_inactive
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "alborz.admin",
+  "password": "Alborz@1404"
+}
+
+### 11.3 فعال‌سازی مجدد شرکت
+POST {{baseUrl}}/admin/tenants/{{tenant2Id}}/activate
+Authorization: Bearer {{saToken}}
+
+### 11.4 ورود دوباره — حالا باید کار کند
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "alborz.admin",
+  "password": "Alborz@1404"
+}
+
+
+### -------------------------------------------------------------------------
+### فاز ۱۲ — بازیابی رمز و قفل حساب
+### -------------------------------------------------------------------------
+
+### 12.1 درخواست بازیابی رمز
+# انتظار: 204 همیشه. توکن در لاگ سرور چاپ می‌شود:
+#   [PASSWORD RESET] user=... token=...
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "admin@armanbana.ir"
+}
+
+### 12.2 ایمیل ناموجود
+# انتظار: 204 هم — نباید لو برود که ایمیل ثبت نشده
+POST {{baseUrl}}/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "nonexistent@nowhere.com"
+}
+
+### 12.3 تعیین رمز جدید
+# توکن را از لاگ سرور بردارید و جایگزین کنید
+POST {{baseUrl}}/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "PASTE_TOKEN_FROM_SERVER_LOG",
+  "newPassword": "NewArman@1404"
+}
+
+### 12.4 قفل حساب — این را ۵ بار پشت سر هم اجرا کنید
+# انتظار: تلاش پنجم code = auth.account_locked می‌دهد
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "usernameOrEmail": "arman.admin",
+  "password": "DefinitelyWrong@9"
+}
+
+### 12.5 خروج
+POST {{baseUrl}}/auth/logout
+Authorization: Bearer {{caToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{saRefresh}}"
+}
