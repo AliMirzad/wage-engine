@@ -1,10 +1,4 @@
 {
   "platform": "docker",
-  "port": 8080,
-  "disks": [
-    {
-      "name": "pg-data",
-      "mountTo": "/var/lib/postgresql/data"
-    }
-  ]
+  "port": 8080
 }

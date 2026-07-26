@@ -1,11 +1,10 @@
 spring:
   application:
     name: wage-engine
-
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/accounting_db}
-    username: ${DB_USER:accounting_user}
-    password: ${DB_PASSWORD:accounting_pass}
+    url: ${DB_URL:jdbc:postgresql://wage-engine:5432/postgres}
+    username: ${DB_USER:root}
+    password: ${DB_PASSWORD:2Exl8Yw2HT6lEO6na1nkTVkb}
     driver-class-name: org.postgresql.Driver
 
   jpa:

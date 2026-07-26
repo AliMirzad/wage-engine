@@ -19,9 +19,14 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB_URL: jdbc:postgresql://db:5432/accounting_db
-      DB_USER: accounting_user
-      DB_PASSWORD: accounting_pass
+#      DB_URL: jdbc:postgresql://db:5432/accounting_db
+#      DB_USER: accounting_user
+#      DB_PASSWORD: accounting_pass
+#      JWT_SECRET: dev-secret-min-256-bits-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#      SUPER_ADMIN_PASSWORD: ChangeMe@123
+      DB_URL: jdbc:postgresql://wage-engine:5432/postgres
+      DB_USER: root
+      DB_PASSWORD: 2Exl8Yw2HT6lEO6na1nkTVkb
       JWT_SECRET: dev-secret-min-256-bits-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       SUPER_ADMIN_PASSWORD: ChangeMe@123
     ports:
