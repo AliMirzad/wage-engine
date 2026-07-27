@@ -56,16 +56,16 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     List<Employee> findByTenantIdAndIdIn(Long tenantId, Collection<Long> ids);
 
     @Query("""
-            SELECT e FROM Employee e
-            WHERE e.tenantId = :tenantId
-              AND (:active IS NULL OR e.active = :active)
-              AND (:includeTerminated = true OR e.terminationDate IS NULL)
-              AND (:search IS NULL
-                   OR LOWER(e.firstName) LIKE LOWER(CONCAT('%', :search, '%'))
-                   OR LOWER(e.lastName)  LIKE LOWER(CONCAT('%', :search, '%'))
-                   OR e.personnelCode    LIKE CONCAT('%', :search, '%')
-                   OR e.nationalId       LIKE CONCAT('%', :search, '%'))
-            """)
+        SELECT e FROM Employee e
+        WHERE e.tenantId = :tenantId
+          AND (CAST(:active AS Boolean) IS NULL OR e.active = :active)
+          AND (:includeTerminated = true OR e.terminationDate IS NULL)
+          AND (CAST(:search AS String) IS NULL
+               OR LOWER(e.firstName) LIKE LOWER(CONCAT('%', CAST(:search AS String), '%'))
+               OR LOWER(e.lastName)  LIKE LOWER(CONCAT('%', CAST(:search AS String), '%'))
+               OR e.personnelCode    LIKE CONCAT('%', CAST(:search AS String), '%')
+               OR e.nationalId       LIKE CONCAT('%', CAST(:search AS String), '%'))
+        """)
     Page<Employee> search(@Param("tenantId") Long tenantId,
                           @Param("active") Boolean active,
                           @Param("includeTerminated") boolean includeTerminated,

@@ -3,6 +3,7 @@ package ir.manaz.exception;
 import ir.manaz.common.ErrorResponse;
 import ir.manaz.config.MessageSourceConfig;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.MessageSource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -81,9 +83,18 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.UNAUTHORIZED, "auth.unauthorized", null, req);
     }
 
+//    @ExceptionHandler(Exception.class)
+//    public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {
+//        // TODO: log stack trace
+//        return build(HttpStatus.INTERNAL_SERVER_ERROR, "error.internal", null, req);
+//    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex, HttpServletRequest req) {
-        // TODO: log stack trace
+        // Unknown failures were previously swallowed silently, which made every
+        // 500 undiagnosable. The client still sees only the generic Persian
+        // message; the detail stays server-side.
+        log.error("Unhandled exception on {} {}", req.getMethod(), req.getRequestURI(), ex);
         return build(HttpStatus.INTERNAL_SERVER_ERROR, "error.internal", null, req);
     }
 
