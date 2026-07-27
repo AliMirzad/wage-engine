@@ -138,4 +138,33 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
 
     /** همه قراردادهای غیرباطل یک پروژه — شامل خاتمه‌یافته‌ها. */
     Page<Contract> findByTenantIdAndProjectIdAndVoidedFalse(Long tenantId, Long projectId, Pageable pageable);
+
+    /**
+     * Contract has no JPA relation to Employee — `employeeId` is a raw column — so
+     * the name search uses an ad-hoc LEFT JOIN. LEFT is deliberate: an INNER join
+     * would silently drop contracts whose employee is soft-deleted, because
+     * Employee carries @SQLRestriction("deleted_at IS NULL").
+     *
+     * `:search` is CAST because Postgres cannot infer the type of a bare null
+     * parameter and fails with `function lower(bytea) does not exist`.
+     */
+    @Query("""
+        SELECT c FROM Contract c
+        LEFT JOIN Employee e ON e.id = c.employeeId AND e.tenantId = c.tenantId
+        WHERE c.tenantId = :tenantId
+          AND (CAST(:search AS String) IS NULL
+               OR LOWER(c.contractNumber) LIKE LOWER(CONCAT('%', CAST(:search AS String), '%'))
+               OR LOWER(e.firstName)      LIKE LOWER(CONCAT('%', CAST(:search AS String), '%'))
+               OR LOWER(e.lastName)       LIKE LOWER(CONCAT('%', CAST(:search AS String), '%')))
+          AND (:status = 'ALL'
+               OR (:status = 'VOIDED' AND c.voided = true)
+               OR (:status = 'ENDED'  AND c.voided = false
+                                      AND c.endDate IS NOT NULL AND c.endDate < CURRENT_DATE)
+               OR (:status = 'ACTIVE' AND c.voided = false
+                                      AND (c.endDate IS NULL OR c.endDate >= CURRENT_DATE)))
+        """)
+    Page<Contract> search(@Param("tenantId") Long tenantId,
+                          @Param("search") String search,
+                          @Param("status") String status,
+                          Pageable pageable);
 }

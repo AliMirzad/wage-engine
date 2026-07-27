@@ -2,11 +2,16 @@ package ir.manaz.config;
 
 import lombok.Getter;
 import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "app.security")
+@Slf4j
 public class AppSecurityProperties {
 
     private Jwt jwt = new Jwt();
@@ -14,6 +19,7 @@ public class AppSecurityProperties {
     private LoginAttempt loginAttempt = new LoginAttempt();
     private PasswordReset passwordReset = new PasswordReset();
     private Cors cors = new Cors();
+
 
     @Getter @Setter
     public static class Jwt {
@@ -43,6 +49,13 @@ public class AppSecurityProperties {
 
     @Getter @Setter
     public static class Cors {
-        private boolean enabled = false;
+        private boolean enabled = true;
+        /** Exact origins, e.g. https://panel.manaz.pro — wildcards are rejected. */
+        private List<String> allowedOrigins = new ArrayList<>();
+        private List<String> allowedMethods =
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
+        private List<String> allowedHeaders =
+                List.of("Authorization", "Content-Type", "Accept", "X-Requested-With");
+        private long maxAge = 3600;
     }
 }

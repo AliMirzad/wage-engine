@@ -34,9 +34,15 @@ public class ContractController {
             @ApiResponse(responseCode = "403", description = "دسترسی CONTRACT_READ ندارید")
     })
     public PageResponse<ContractResponse> list(
+            @Parameter(description = "جست‌وجو در شماره قرارداد و نام کارمند")
+            @RequestParam(required = false) String search,
+
+            @Parameter(description = "فیلتر وضعیت: ALL، ACTIVE، ENDED، VOIDED")
+            @RequestParam(defaultValue = "ALL") String status,
+
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return contractService.list(pageable);
+        return contractService.list(search, status, pageable);
     }
 
     @GetMapping("/employees/{employeeId}/contracts")

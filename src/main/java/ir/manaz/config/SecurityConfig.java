@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -18,6 +19,11 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
@@ -43,21 +49,52 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthEntryPoint authEntryPoint;
     private final JwtAccessDeniedHandler accessDeniedHandler;
+    private final AppSecurityProperties securityProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                /*
+                 * CSRF stays off by design, not by omission: authentication is a
+                 * bearer token in a header, never a cookie, so a cross-site form
+                 * post cannot carry credentials. Re-enable it only if this API
+                 * ever starts authenticating via cookies.
+                 */
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> cors.disable())  // CORS disabled
+                .cors(cors -> {
+                    if (securityProperties.getCors().isEnabled()) {
+                        cors.configurationSource(corsConfigurationSource());
+                    } else {
+                        cors.disable();
+                    }
+                })
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        // Preflight carries no credentials and must never be blocked.
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        var props = securityProperties.getCors();
+        var config = new CorsConfiguration();
+        config.setAllowedOrigins(props.getAllowedOrigins());
+        config.setAllowedMethods(props.getAllowedMethods());
+        config.setAllowedHeaders(props.getAllowedHeaders());
+        config.setExposedHeaders(List.of("Content-Disposition"));
+        config.setAllowCredentials(false);
+        config.setMaxAge(props.getMaxAge());
+
+        var source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config);
+        return source;
     }
 
     @Bean

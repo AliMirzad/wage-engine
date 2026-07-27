@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -44,10 +45,18 @@ public class ContractService {
 
     // ─── Queries ─────────────────────────────────────────────
 
-    public PageResponse<ContractResponse> list(Pageable pageable) {
+    public PageResponse<ContractResponse> list(String search, String status, Pageable pageable) {
         Long tenantId = requireTenantId();
-        Page<Contract> page = contractRepository.findByTenantId(tenantId, pageable);
-        return PageResponse.of(page.map(ContractResponse::from));
+        String term = (search == null || search.isBlank()) ? null : search.trim();
+        String state = (status == null || status.isBlank()) ? "ALL" : status.trim().toUpperCase();
+
+        if (!Set.of("ALL", "ACTIVE", "ENDED", "VOIDED").contains(state)) {
+            throw new BusinessException("contract.status.invalid");
+        }
+
+        return PageResponse.of(
+                contractRepository.search(tenantId, term, state, pageable)
+                        .map(ContractResponse::from));
     }
 
     public PageResponse<ContractResponse> listByEmployee(Long employeeId, Pageable pageable) {

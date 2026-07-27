@@ -30,9 +30,9 @@ spring:
 
 server:
   port: ${PORT:8080}
-  error:
-  include-stacktrace: always
-  include-message: always
+#  error:
+#      include-stacktrace: always
+#      include-message: always
 
 app:
   security:
@@ -51,7 +51,8 @@ app:
     password-reset:
       token-expiration-minutes: 30
     cors:
-      enabled: false
+      enabled: ${CORS_ENABLED:false}
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:}
     super-admin:
       enabled: true
       username: ${SUPER_ADMIN_USERNAME:admin}
