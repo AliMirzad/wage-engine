@@ -48,13 +48,36 @@ public class RefreshTokenService {
         return token;
     }
 
+    /**
+     * revoke ساده — تنها هنگام logout استفاده می‌شود؛ برای rotation از
+     * {@link #consumeForRotation(String)} استفاده کنید تا اتمی و race-safe باشد.
+     */
     @Transactional
     public void revoke(String jti) {
-        repository.findByJti(jti).ifPresent(t -> {
-            t.setRevoked(true);
-            t.setRevokedAt(Instant.now());
-            repository.save(t);
-        });
+        repository.revokeIfActive(jti, Instant.now());
+    }
+
+    /**
+     * revoke اتمی یک refresh token در جریان rotation؛ اگر قبلاً استفاده شده
+     * (revoked=true) استثنا می‌اندازد. باعث می‌شود دو refresh همزمان با یک
+     * توکن نتوانند هر دو موفق باشند و replay کوتاه‌مدت بلاک شود.
+     */
+    @Transactional
+    public RefreshToken consumeForRotation(String jti) {
+        RefreshToken token = repository.findByJti(jti)
+                .orElseThrow(() -> new UnauthorizedException("auth.refresh_token.invalid"));
+        if (token.getExpiresAt().isBefore(Instant.now())) {
+            throw new UnauthorizedException("auth.refresh_token.invalid");
+        }
+        int updated = repository.revokeIfActive(jti, Instant.now());
+        if (updated == 0) {
+            // یا race باخته‌ایم یا این توکن قبلاً استفاده شده — به‌عنوان سیگنال replay
+            // همه‌ی session‌های کاربر را باطل می‌کنیم تا جلوی سوءاستفاده گرفته شود.
+            log.warn("Refresh token replay detected for user {} — revoking all sessions", token.getUserId());
+            repository.revokeAllByUserId(token.getUserId(), Instant.now());
+            throw new UnauthorizedException("auth.refresh_token.invalid");
+        }
+        return token;
     }
 
     @Transactional

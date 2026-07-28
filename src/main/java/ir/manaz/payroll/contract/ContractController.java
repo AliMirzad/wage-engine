@@ -184,7 +184,7 @@ public class ContractController {
         contractService.voidContract(id, req);
     }
 
-    @GetMapping("/api/v1/projects/{projectId}/employees")
+    @GetMapping("/projects/{projectId}/employees")
     @PreAuthorize("hasAuthority('EMPLOYEE_READ')")
     @Operation(
             summary = "کارگران یک پروژه",

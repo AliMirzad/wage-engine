@@ -116,12 +116,6 @@ public interface ContractRepository extends JpaRepository<Contract, Long> {
 
     boolean existsByTenantIdAndPreviousContractId(Long tenantId, Long previousContractId);
 
-    @Query(value = """
-            SELECT COALESCE(MAX(CAST(SPLIT_PART(contract_number, '-', 3) AS INTEGER)), 0)
-            FROM contracts WHERE tenant_id = :tenantId
-            """, nativeQuery = true)
-    int findMaxContractSequence(@Param("tenantId") Long tenantId);
-
     /** قراردادهای فعال یک پروژه در تاریخ داده‌شده. */
     @Query("""
             SELECT c FROM Contract c

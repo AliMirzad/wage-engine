@@ -2,14 +2,30 @@ spring:
   application:
     name: wage-engine
   datasource:
-    url: ${DB_URL:jdbc:postgresql://wage-engine:5432/postgres}
-    username: ${DB_USER:root}
-    password: ${DB_PASSWORD:2Exl8Yw2HT6lEO6na1nkTVkb}
+    # هیچ default نداریم — اگر envها ست نباشند، اپ عمداً fail می‌کند
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+
+  # اگر MAIL_ENABLED=true، host/username/password باید ست بشن
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
 
   jpa:
     hibernate:
       ddl-auto: validate
+    open-in-view: false
     show-sql: false
     properties:
       hibernate:
@@ -22,23 +38,34 @@ spring:
     baseline-on-migrate: true
     baseline-version: 0
     locations: classpath:db/migration
-    clean-disabled: false
+    # جلوگیری از پاک شدن تصادفی/عمدی کل schema — «flyway clean» بلاک می‌شود
+    clean-disabled: true
   web:
     error:
-      include-binding-errors: always
-      include-message: always
+      # این‌ها فقط تحت GlobalExceptionHandler برای مسیرهای validation دیده می‌شوند؛
+      # پیام‌های داخلی هیچ‌گاه به کاربر بازتاب نمی‌یابند.
+      include-binding-errors: on-param
+      include-message: on-param
+  data:
+    web:
+      pageable:
+        # سقف صفحه — جلوگیری از حمله OOM با ?size=1000000
+        max-page-size: 100
+        default-page-size: 20
 
 server:
   port: ${PORT:8080}
-#  error:
-#      include-stacktrace: always
-#      include-message: always
+  error:
+    include-stacktrace: never
+    include-message: never
+  forward-headers-strategy: framework
 
 app:
   security:
     jwt:
-      secret: ${JWT_SECRET:CHANGE_ME_IN_PROD_min_32_bytes_base64_encoded_secret_key_here_1234567890}
-      access-token-expiration: 900000
+      secret: ${JWT_SECRET}
+      # ۵ دقیقه — کوچک‌تر از قبل تا پنجره اثر deactivation کاربر محدود شود
+      access-token-expiration: 300000
       refresh-token-expiration: 604800000
       issuer: "accounting-app"
     password:
@@ -54,16 +81,52 @@ app:
       enabled: ${CORS_ENABLED:false}
       allowed-origins: ${CORS_ALLOWED_ORIGINS:}
     super-admin:
-      enabled: true
+      enabled: ${SUPER_ADMIN_ENABLED:true}
       username: ${SUPER_ADMIN_USERNAME:admin}
       email: ${SUPER_ADMIN_EMAIL:admin@accounting.local}
-      password: ${SUPER_ADMIN_PASSWORD:ChangeMe@123}
+      # بدون default — seeder اگر پر نبود throw می‌کند
+      password: ${SUPER_ADMIN_PASSWORD:}
+    rate-limit:
+      # حد بالای درخواست در دقیقه از هر IP روی endpointهای حساس auth
+      auth-per-minute: 20
+      forgot-password-per-minute: 5
+  # enabled=false → LoggingEmailService (dev). true → SmtpEmailService
+  email:
+    enabled: ${MAIL_ENABLED:false}
+    from: ${MAIL_FROM:no-reply@example.com}
+    from-name: ${MAIL_FROM_NAME:سامانه دستمزد}
+    panel-base-url: ${PANEL_BASE_URL:http://localhost:3000}
+  # پله‌های مالیات — قبل از prod با ابلاغیه رسمی سازمان امور مالیاتی همان سال جایگزین شود.
+  # اگر این بخش کامل حذف شود، پیش‌فرض داخل TaxProperties استفاده می‌شود.
+  payroll:
+    tax:
+      brackets:
+        - { threshold: 120000000, rate: 0.00 }
+        - { threshold: 165000000, rate: 0.10 }
+        - { threshold: 270000000, rate: 0.15 }
+        - { threshold: 400000000, rate: 0.20 }
+        - { threshold: null,      rate: 0.30 }
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 logging:
   level:
     org.flywaydb: INFO
     org.springframework.boot.autoconfigure.flyway: INFO
-    ir.manaz: DEBUG
+    ir.manaz: ${LOG_LEVEL_APP:INFO}
     org.springframework.security: INFO
 
 springdoc:

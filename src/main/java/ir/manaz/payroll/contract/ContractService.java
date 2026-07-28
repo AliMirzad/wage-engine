@@ -3,7 +3,9 @@ package ir.manaz.payroll.contract;
 import ir.manaz.audit.AuditEvent;
 import ir.manaz.audit.AuditLogService;
 import ir.manaz.audit.AuditOutcome;
+import ir.manaz.common.EntityCounterService;
 import ir.manaz.common.PageResponse;
+import ir.manaz.common.SecurityHelper;
 import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
@@ -13,13 +15,10 @@ import ir.manaz.payroll.employee.Employee;
 import ir.manaz.payroll.employee.EmployeeRepository;
 import ir.manaz.payroll.project.Project;
 import ir.manaz.payroll.project.ProjectRepository;
-import ir.manaz.security.jwt.AuthenticatedPrincipal;
 import ir.manaz.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +39,8 @@ public class ContractService {
     private final EmployeeRepository employeeRepository;
     private final ProjectRepository projectRepository;
     private final AuditLogService auditLogService;
+    private final SecurityHelper securityHelper;
+    private final EntityCounterService entityCounterService;
 
     private static final int MAX_BACKDATE_YEARS = 5;
 
@@ -239,6 +240,10 @@ public class ContractService {
         Contract contract = contractRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new NotFoundException("contract.not_found", id));
 
+        if (contract.isVoided()) {
+            throw new BusinessException("contract.already_voided");
+        }
+
         // فیلدهای مالی و تاریخ‌ها تغییرناپذیرند — برای تغییر، قرارداد را خاتمه
         // داده و قرارداد جدید با previousContractId بسازید (الزام حقوقی)
         if (req.notes() != null) contract.setNotes(req.notes());
@@ -281,7 +286,7 @@ public class ContractService {
 
         contract.setVoided(true);
         contract.setVoidedAt(Instant.now());
-        contract.setVoidedBy(currentUserId());
+        contract.setVoidedBy(securityHelper.currentUserId());
         contract.setVoidReason(req.reason());
 
         audit(AuditEvent.CONTRACT_VOIDED, contract, "reason=" + req.reason());
@@ -326,12 +331,9 @@ public class ContractService {
         }
     }
 
-    /**
-     * تولید شماره قرارداد: CT-{tenantId}-{4-digit-seq}
-     * TODO(deferred #5): race-prone؛ UNIQUE constraint در DB safety-net است.
-     */
+    /** تولید شماره قرارداد: CT-{tenantId}-{4-digit-seq} — اتمی از طریق شمارنده مستأجر. */
     private String generateContractNumber(Long tenantId) {
-        int next = contractRepository.findMaxContractSequence(tenantId) + 1;
+        long next = entityCounterService.nextValue(tenantId, "CONTRACT");
         return String.format("CT-%d-%04d", tenantId, next);
     }
 
@@ -347,32 +349,10 @@ public class ContractService {
         return tenantId;
     }
 
-    private AuthenticatedPrincipal principal() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return (auth != null && auth.getPrincipal() instanceof AuthenticatedPrincipal p) ? p : null;
-    }
-
-    private Long currentUserId() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.userId();
-    }
-
-    private String currentUsername() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.username();
-    }
-
     private void audit(String event, Contract c, String details) {
-        auditLogService.log(
-                event,
-                AuditOutcome.SUCCESS,
-                c.getTenantId(),
-                currentUserId(),
-                currentUsername(),
-                details,
-                "CONTRACT",
-                String.valueOf(c.getId())
-        );
+        auditLogService.logForCurrent(
+                event, AuditOutcome.SUCCESS, c.getTenantId(),
+                "CONTRACT", c.getId(), details);
     }
 
     private static boolean rangesOverlap(LocalDate aStart, LocalDate aEnd,

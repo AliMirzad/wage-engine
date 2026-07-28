@@ -38,7 +38,7 @@ public class SuperAdminSeeder implements CommandLineRunner {
     @Value("${app.security.super-admin.email:admin@accounting.local}")
     private String email;
 
-    @Value("${app.security.super-admin.password:ChangeMe@123}")
+    @Value("${app.security.super-admin.password:}")
     private String password;
 
     @Value("${app.security.super-admin.enabled:true}")
@@ -48,6 +48,13 @@ public class SuperAdminSeeder implements CommandLineRunner {
     public void run(String... args) {
         if (!enabled) return;
         if (userRepository.findByUsernameIgnoreCase(username).isPresent()) return;
+
+        // fail-fast: بدون رمز صریح، seeder یک حساب با رمز خالی نمی‌سازد
+        if (password == null || password.isBlank()) {
+            throw new IllegalStateException(
+                    "SUPER_ADMIN_PASSWORD env var is required to seed the initial super admin. " +
+                    "Set app.security.super-admin.enabled=false to skip seeding.");
+        }
 
         Role superAdmin = roleRepository.findByNameAndTenantIdIsNull(DefaultRoles.SUPER_ADMIN)
                 .orElseThrow(() -> new IllegalStateException("SUPER_ADMIN role missing"));

@@ -4,6 +4,7 @@ import ir.manaz.audit.AuditEvent;
 import ir.manaz.audit.AuditLogService;
 import ir.manaz.audit.AuditOutcome;
 import ir.manaz.common.PageResponse;
+import ir.manaz.email.EmailService;
 import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
@@ -37,6 +38,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final RefreshTokenService refreshTokenService;
+    private final EmailService emailService;
 
     /** نقش‌های سیستمی که مدیر شرکت اجازه تخصیص دارد. SUPER_ADMIN و COMPANY_ADMIN عمداً نیستند. */
     private static final Set<String> ASSIGNABLE_SYSTEM_ROLES = Set.of(
@@ -72,39 +74,8 @@ public class UserService {
     @Transactional
     public CreateUserResponse create(CreateUserRequest req, Long actorUserId, String actorUsername) {
         Long tenantId = requireTenantId();
-
-        String username = req.username().trim().toLowerCase();
-        String email = req.email().trim().toLowerCase();
-
-        if (userRepository.existsByUsernameIgnoreCase(username))
-            throw new ConflictException("user.username.duplicate");
-        if (userRepository.existsByEmailIgnoreCase(email))
-            throw new ConflictException("user.email.duplicate");
-
         Set<Role> roles = resolveAssignableRoles(req.roleNames());
-
-        String rawPassword = generatePassword();
-
-        User user = userRepository.save(User.builder()
-                .tenantId(tenantId)
-                .username(username)
-                .email(email)
-                .passwordHash(passwordEncoder.encode(rawPassword))
-                .firstName(req.firstName())
-                .lastName(req.lastName())
-                .enabled(true)
-                .accountNonLocked(true)
-                .passwordChangedAt(Instant.now())
-                .roles(roles)
-                .build());
-
-        auditLogService.log(AuditEvent.USER_CREATED, AuditOutcome.SUCCESS,
-                tenantId, actorUserId, actorUsername,
-                "User '" + username + "' created with roles=["
-                        + roles.stream().map(Role::getName).sorted().collect(Collectors.joining(",")) + "]");
-        log.info("User {} created in tenant {} by {}", username, tenantId, actorUsername);
-
-        return new CreateUserResponse(toResponse(user), rawPassword);
+        return createInternal(tenantId, req, roles, actorUserId, actorUsername, false);
     }
 
     // ============================== UPDATE ==============================
@@ -180,6 +151,9 @@ public class UserService {
     @Transactional
     public String resetPassword(Long id, Long actorUserId, String actorUsername) {
         User user = load(id);
+        // ادمین باید برای رمز خودش از /auth/change-password استفاده کند
+        // تا لازم شود رمز فعلی را وارد کند و نتوان با session ربوده‌شده کنترل حساب را نگه داشت.
+        guardNotSelf(user, actorUserId, "user.cannot_reset_own_password");
         String rawPassword = generatePassword();
 
         user.setPasswordHash(passwordEncoder.encode(rawPassword));
@@ -194,6 +168,8 @@ public class UserService {
                 user.getTenantId(), actorUserId, actorUsername,
                 "Password of '" + user.getUsername() + "' reset by admin");
         log.warn("Password of {} reset by admin {}", user.getUsername(), actorUsername);
+
+        emailService.sendPasswordResetByAdmin(user.getEmail(), user.getUsername(), rawPassword);
 
         return rawPassword;
     }
@@ -211,6 +187,18 @@ public class UserService {
     @Transactional
     public CreateUserResponse createForTenant(Long tenantId, CreateUserRequest req,
                                               Long actorUserId, String actorUsername) {
+        Set<Role> roles = resolveAdminAssignableRoles(req.roleNames());
+        return createInternal(tenantId, req, roles, actorUserId, actorUsername, true);
+    }
+
+    /**
+     * منطق مشترک ساخت کاربر بین مسیر شرکت و مسیر ادمین سکو.
+     * تفاوت‌ها: نقش‌های مجاز قبل از فراخوانی resolve می‌شوند، و پرچم {@code byPlatformAdmin}
+     * فقط برچسب لاگ و audit را تغییر می‌دهد.
+     */
+    private CreateUserResponse createInternal(Long tenantId, CreateUserRequest req, Set<Role> roles,
+                                              Long actorUserId, String actorUsername,
+                                              boolean byPlatformAdmin) {
         String username = req.username().trim().toLowerCase();
         String email = req.email().trim().toLowerCase();
 
@@ -219,7 +207,6 @@ public class UserService {
         if (userRepository.existsByEmailIgnoreCase(email))
             throw new ConflictException("user.email.duplicate");
 
-        Set<Role> roles = resolveAdminAssignableRoles(req.roleNames());
         String rawPassword = generatePassword();
 
         User user = userRepository.save(User.builder()
@@ -235,11 +222,19 @@ public class UserService {
                 .roles(roles)
                 .build());
 
+        String roleList = roles.stream().map(Role::getName).sorted().collect(Collectors.joining(","));
+        String actorLabel = byPlatformAdmin ? " by platform admin" : "";
         auditLogService.log(AuditEvent.USER_CREATED, AuditOutcome.SUCCESS,
                 tenantId, actorUserId, actorUsername,
-                "User '" + username + "' created in tenant " + tenantId + " by platform admin with roles=["
-                        + roles.stream().map(Role::getName).sorted().collect(Collectors.joining(",")) + "]");
-        log.warn("Platform admin {} created user {} in tenant {}", actorUsername, username, tenantId);
+                "User '" + username + "' created in tenant " + tenantId + actorLabel
+                        + " with roles=[" + roleList + "]");
+        if (byPlatformAdmin) {
+            log.warn("Platform admin {} created user {} in tenant {}", actorUsername, username, tenantId);
+        } else {
+            log.info("User {} created in tenant {} by {}", username, tenantId, actorUsername);
+        }
+
+        emailService.sendInitialCredentials(user.getEmail(), username, rawPassword);
 
         return new CreateUserResponse(toResponse(user), rawPassword);
     }
@@ -266,6 +261,8 @@ public class UserService {
                 "Password of '" + user.getUsername() + "' reset by platform admin");
         log.warn("Platform admin {} reset password of {} in tenant {}",
                 actorUsername, user.getUsername(), tenantId);
+
+        emailService.sendPasswordResetByAdmin(user.getEmail(), user.getUsername(), rawPassword);
 
         return rawPassword;
     }
@@ -315,12 +312,15 @@ public class UserService {
     /**
      * نقش‌های مجاز برای تخصیص توسط مدیر شرکت:
      *  - نقش‌های سیستمی فقط از سفیدلیست (SUPER_ADMIN و COMPANY_ADMIN مجاز نیستند)
-     *  - نقش‌های سفارشی مجازند مگر دسترسی ارتقادهنده داشته باشند
+     *  - نقش‌های سفارشی همان شرکت مجازند مگر دسترسی ارتقادهنده داشته باشند
+     * نقش سفارشی همان شرکت بر سیستمی هم‌نام اولویت دارد.
      */
     private Set<Role> resolveAssignableRoles(List<String> roleNames) {
+        Long tenantId = requireTenantId();
         Set<Role> result = new HashSet<>();
         for (String name : roleNames) {
-            Role role = roleRepository.findByNameAndTenantIdIsNull(name)
+            Role role = roleRepository.findByNameAndTenantId(name, tenantId)
+                    .or(() -> roleRepository.findByNameAndTenantIdIsNull(name))
                     .orElseThrow(() -> new NotFoundException("role.not_found", name));
 
             if (role.isSystemRole() && !ASSIGNABLE_SYSTEM_ROLES.contains(role.getName())) {

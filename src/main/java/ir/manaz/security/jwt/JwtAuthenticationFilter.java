@@ -48,7 +48,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
 
                 String username = claims.getSubject();
-                Long tenantId = claims.get(JwtService.CLAIM_TENANT_ID, Number.class).longValue();
+                Number tidClaim = claims.get(JwtService.CLAIM_TENANT_ID, Number.class);
+                // مقدار غیرمثبت (باقی‌مانده از توکن‌های نسخه قدیمی که -1 را sentinel می‌گذاشت) null تلقی می‌شود
+                Long tenantId = (tidClaim == null || tidClaim.longValue() <= 0) ? null : tidClaim.longValue();
                 @SuppressWarnings("unchecked")
                 List<String> auths = claims.get(JwtService.CLAIM_AUTHORITIES, List.class);
                 Long userId = claims.get(JwtService.CLAIM_USER_ID, Number.class).longValue();
@@ -57,14 +59,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         .map(SimpleGrantedAuthority::new)
                         .collect(Collectors.toList());
 
-                Long effectiveTenantId = (tenantId == null || tenantId <= 0) ? null : tenantId;
-                AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, effectiveTenantId, username);
+                AuthenticatedPrincipal principal = new AuthenticatedPrincipal(userId, tenantId, username);
 
                 var auth = new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
-                if (effectiveTenantId != null) {
+                if (tenantId != null) {
                     TenantContext.setTenantId(tenantId);
                 }
             } catch (ExpiredJwtException e) {

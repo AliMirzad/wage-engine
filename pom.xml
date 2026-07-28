@@ -78,6 +78,25 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Email (SMTP) — SmtpEmailService از این استفاده می‌کند -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
+        <!-- Actuator: health, info, prometheus. مسیرهای عمومی در SecurityConfig محدود شده. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Micrometer Prometheus registry — /actuator/prometheus برای scrape -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Flyway for DB migrations -->
         <dependency>
             <groupId>org.flywaydb</groupId>

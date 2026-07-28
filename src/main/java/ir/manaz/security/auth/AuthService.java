@@ -3,6 +3,7 @@ package ir.manaz.security.auth;
 import ir.manaz.audit.AuditEvent;
 import ir.manaz.audit.AuditLogService;
 import ir.manaz.audit.AuditOutcome;
+import ir.manaz.email.EmailService;
 import ir.manaz.security.auth.dto.AuthDtos.*;
 import ir.manaz.config.AppSecurityProperties;
 import ir.manaz.exception.BusinessException;
@@ -25,9 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import ir.manaz.exception.NotFoundException;
-import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.UnauthorizedException;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,7 +37,6 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -57,6 +55,7 @@ public class AuthService {
     private final AuditLogService auditLogService;
     private final PasswordResetTokenRepository resetTokenRepository;
     private final AppSecurityProperties props;
+    private final EmailService emailService;
 
     // ------------------------------- LOGIN -------------------------------
     @Transactional
@@ -115,12 +114,12 @@ public class AuthService {
         }
 
         String jti = claims.getId();
-        RefreshToken stored = refreshTokenService.getActive(jti);
+        // consumeForRotation اتمی است: در صورت race یا replay خطا می‌اندازد
+        // و همه sessionها را baطل می‌کند تا مهاجم نتواند از توکن بازنشسته سود ببرد.
+        RefreshToken stored = refreshTokenService.consumeForRotation(jti);
 
         User user = userRepository.findById(stored.getUserId())
                 .orElseThrow(() -> new NotFoundException("user.not_found"));
-
-        refreshTokenService.revoke(jti);
 
         CustomUserDetails principal = new CustomUserDetails(user);
         return issueTokens(principal, user, httpReq, AuditEvent.TOKEN_REFRESH);
@@ -131,7 +130,11 @@ public class AuthService {
     public void logout(LogoutRequest req, Long userId, String username, Long tenantId) {
         try {
             Claims claims = jwtService.parse(req.refreshToken());
-            refreshTokenService.revoke(claims.getId());
+            Number tokenUid = claims.get(JwtService.CLAIM_USER_ID, Number.class);
+            // فقط توکنی که به همین کاربر تعلق دارد باطل شود — جلوی revoke کردن session دیگران
+            if (tokenUid != null && userId != null && tokenUid.longValue() == userId) {
+                refreshTokenService.revoke(claims.getId());
+            }
         } catch (Exception ignored) { /* silently succeed */ }
         auditLogService.log(AuditEvent.LOGOUT, AuditOutcome.SUCCESS, tenantId, userId, username, null);
     }
@@ -176,9 +179,8 @@ public class AuthService {
                     .build();
             resetTokenRepository.save(token);
 
-            // TODO: hook up email service. For now, log the reset link so devs can test.
-            log.info("[PASSWORD RESET] user={} token={} (valid {} min)",
-                    user.getEmail(), rawToken, props.getPasswordReset().getTokenExpirationMinutes());
+            int validMinutes = props.getPasswordReset().getTokenExpirationMinutes();
+            emailService.sendPasswordReset(user.getEmail(), rawToken, validMinutes);
 
             auditLogService.log(AuditEvent.PASSWORD_RESET_REQUEST, AuditOutcome.SUCCESS,
                     user.getTenantId(), user.getId(), user.getUsername(), null);

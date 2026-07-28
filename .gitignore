@@ -68,6 +68,9 @@ logs/
 # ==========================================
 *.env
 *.env.local
-.env.*
+.env
+.env.local
+.env.*.local
+!.env.example
 application-secret.properties
 application-secret.yml

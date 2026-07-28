@@ -19,6 +19,7 @@ public class AppSecurityProperties {
     private LoginAttempt loginAttempt = new LoginAttempt();
     private PasswordReset passwordReset = new PasswordReset();
     private Cors cors = new Cors();
+    private RateLimit rateLimit = new RateLimit();
 
 
     @Getter @Setter
@@ -45,6 +46,14 @@ public class AppSecurityProperties {
     @Getter @Setter
     public static class PasswordReset {
         private int tokenExpirationMinutes = 30;
+    }
+
+    @Getter @Setter
+    public static class RateLimit {
+        /** سقف کل درخواست‌های auth از هر IP در دقیقه (login/refresh/reset-password). */
+        private int authPerMinute = 20;
+        /** سقف مخصوص forgot-password در دقیقه — سخت‌گیرانه‌تر چون قابل abuse برای spam. */
+        private int forgotPasswordPerMinute = 5;
     }
 
     @Getter @Setter

@@ -47,12 +47,6 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     @QueryHints(@QueryHint(name = "org.hibernate.readOnly", value = "true"))
     Optional<Employee> findByIdIncludingDeleted(@Param("id") Long id, @Param("tenantId") Long tenantId);
 
-    @Query(value = """
-            SELECT COALESCE(MAX(CAST(SPLIT_PART(personnel_code, '-', 3) AS INTEGER)), 0)
-            FROM employees WHERE tenant_id = :tenantId
-            """, nativeQuery = true)
-    int findMaxPersonnelSequence(@Param("tenantId") Long tenantId);
-
     List<Employee> findByTenantIdAndIdIn(Long tenantId, Collection<Long> ids);
 
     @Query("""

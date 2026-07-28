@@ -4,12 +4,12 @@ import ir.manaz.audit.AuditEvent;
 import ir.manaz.audit.AuditLogService;
 import ir.manaz.audit.AuditOutcome;
 import ir.manaz.common.PageResponse;
+import ir.manaz.common.SecurityHelper;
 import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
 import ir.manaz.payroll.contract.ContractRepository;
 import ir.manaz.payroll.project.ProjectDtos.*;
-import ir.manaz.security.jwt.AuthenticatedPrincipal;
 import ir.manaz.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -41,6 +41,7 @@ public class ProjectService {
     private final ContractRepository contractRepository;
     private final ProjectRepository projectRepository;
     private final AuditLogService auditLogService;
+    private final SecurityHelper securityHelper;
 
     // ─── Queries ─────────────────────────────────────────────
 
@@ -62,6 +63,7 @@ public class ProjectService {
     @Transactional
     public ProjectResponse create(CreateProjectRequest req) {
         Long tenantId = requireTenantId();
+        boolean financial = canSeeFinancial();
         String code = req.code().trim().toUpperCase();
 
         if (projectRepository.existsByTenantIdAndCode(tenantId, code)) {
@@ -82,19 +84,20 @@ public class ProjectService {
                 .clientContractNumber(req.clientContractNumber())
                 .clientContractDate(req.clientContractDate())
                 // مبلغ پیمان فقط توسط دارنده دسترسی مالی قابل ثبت است
-                .contractAmount(canSeeFinancial() ? req.contractAmount() : null)
+                .contractAmount(financial ? req.contractAmount() : null)
                 .location(req.location())
                 .notes(req.notes())
                 .build();
         project = projectRepository.save(project);
 
         audit(AuditEvent.PROJECT_CREATED, project, "code=" + project.getCode());
-        return ProjectResponse.from(project, canSeeFinancial());
+        return ProjectResponse.from(project, financial);
     }
 
     @Transactional
     public ProjectResponse update(Long id, UpdateProjectRequest req) {
         Project project = load(id);
+        boolean financial = canSeeFinancial();
 
         if (req.name() != null && !req.name().isBlank()) project.setName(req.name().trim());
         if (req.description() != null) project.setDescription(req.description());
@@ -112,12 +115,12 @@ public class ProjectService {
         project.setEndDate(end);
 
         // بدون PROJECT_FINANCIAL_READ مقدار ارسالی نادیده گرفته می‌شود تا مقدار موجود خراب نشود
-        if (req.contractAmount() != null && canSeeFinancial()) {
+        if (req.contractAmount() != null && financial) {
             project.setContractAmount(req.contractAmount());
         }
 
         audit(AuditEvent.PROJECT_UPDATED, project, null);
-        return ProjectResponse.from(project, canSeeFinancial());
+        return ProjectResponse.from(project, financial);
     }
 
     /**
@@ -149,7 +152,7 @@ public class ProjectService {
             }
             project.setActualEndDate(req.actualEndDate() != null ? req.actualEndDate() : LocalDate.now());
             project.setClosedAt(Instant.now());
-            project.setClosedBy(currentUserId());
+            project.setClosedBy(securityHelper.currentUserId());
         } else {
             // بازگشایی — مهر خاتمه پاک می‌شود
             project.setActualEndDate(null);
@@ -199,24 +202,8 @@ public class ProjectService {
                 .anyMatch(FINANCIAL_AUTHORITY::equals);
     }
 
-    private AuthenticatedPrincipal principal() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return (auth != null && auth.getPrincipal() instanceof AuthenticatedPrincipal p) ? p : null;
-    }
-
-    private Long currentUserId() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.userId();
-    }
-
-    private String currentUsername() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.username();
-    }
-
     private void audit(String event, Project project, String details) {
-        auditLogService.log(event, AuditOutcome.SUCCESS,
-                project.getTenantId(), currentUserId(), currentUsername(),
-                details, "PROJECT", String.valueOf(project.getId()));
+        auditLogService.logForCurrent(event, AuditOutcome.SUCCESS,
+                project.getTenantId(), "PROJECT", project.getId(), details);
     }
 }

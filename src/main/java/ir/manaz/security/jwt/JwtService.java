@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import javax.crypto.SecretKey;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,20 +35,41 @@ public class JwtService {
 
     private final AppSecurityProperties props;
 
+    private volatile SecretKey cachedKey;
+
     private SecretKey signingKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(base64EncodeIfNeeded(props.getJwt().getSecret()));
-        return Keys.hmacShaKeyFor(keyBytes);
+        SecretKey key = cachedKey;
+        if (key != null) return key;
+        synchronized (this) {
+            if (cachedKey == null) {
+                cachedKey = buildKey(props.getJwt().getSecret());
+            }
+            return cachedKey;
+        }
     }
 
     /**
-     * Allow either base64 or plain secret; encode if plain (>= 32 bytes required).
+     * secret باید Base64 با حداقل ۳۲ بایت decode شده باشد. رشته plain رد می‌شود
+     * تا اپراتور به‌جای «هرچیزی که ۳۲ کاراکتر بود» صریح یک secret قوی تولید کند:
+     * {@code openssl rand -base64 48}
      */
-    private String base64EncodeIfNeeded(String secret) {
+    private static SecretKey buildKey(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("app.security.jwt.secret is required");
+        }
+        byte[] decoded;
         try {
-            byte[] decoded = Decoders.BASE64.decode(secret);
-            if (decoded.length >= 32) return secret;
-        } catch (Exception ignored) { }
-        return java.util.Base64.getEncoder().encodeToString(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            decoded = Decoders.BASE64.decode(secret);
+        } catch (Exception ex) {
+            throw new IllegalStateException(
+                    "app.security.jwt.secret must be Base64. Generate with: openssl rand -base64 48", ex);
+        }
+        if (decoded.length < 32) {
+            throw new IllegalStateException(
+                    "app.security.jwt.secret must decode to at least 32 bytes (256 bit). " +
+                    "Current size: " + decoded.length + " bytes.");
+        }
+        return Keys.hmacShaKeyFor(decoded);
     }
 
     public String generateAccessToken(CustomUserDetails user) {
@@ -58,18 +80,19 @@ public class JwtService {
                 .map(GrantedAuthority::getAuthority)
                 .collect(Collectors.toList());
 
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(CLAIM_USER_ID, user.getId());
+        if (user.getTenantId() != null) claims.put(CLAIM_TENANT_ID, user.getTenantId());
+        claims.put(CLAIM_AUTHORITIES, authorities);
+        claims.put(CLAIM_TOKEN_TYPE, TYPE_ACCESS);
+
         return Jwts.builder()
                 .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .issuer(props.getJwt().getIssuer())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiry))
-                .claims(Map.of(
-                        CLAIM_USER_ID, user.getId(),
-                        CLAIM_TENANT_ID, user.getTenantId() == null ? -1L : user.getTenantId(),
-                        CLAIM_AUTHORITIES, authorities,
-                        CLAIM_TOKEN_TYPE, TYPE_ACCESS
-                ))
+                .claims(claims)
                 .signWith(signingKey())
                 .compact();
     }
@@ -78,17 +101,18 @@ public class JwtService {
         Instant now = Instant.now();
         Instant expiry = now.plusMillis(props.getJwt().getRefreshTokenExpiration());
 
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(CLAIM_USER_ID, user.getId());
+        if (user.getTenantId() != null) claims.put(CLAIM_TENANT_ID, user.getTenantId());
+        claims.put(CLAIM_TOKEN_TYPE, TYPE_REFRESH);
+
         return Jwts.builder()
                 .id(jti)
                 .subject(user.getUsername())
                 .issuer(props.getJwt().getIssuer())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiry))
-                .claims(Map.of(
-                        CLAIM_USER_ID, user.getId(),
-                        CLAIM_TENANT_ID, user.getTenantId() == null ? -1L : user.getTenantId(),
-                        CLAIM_TOKEN_TYPE, TYPE_REFRESH
-                ))
+                .claims(claims)
                 .signWith(signingKey())
                 .compact();
     }

@@ -3,6 +3,7 @@ package ir.manaz.config;
 import ir.manaz.security.jwt.JwtAccessDeniedHandler;
 import ir.manaz.security.jwt.JwtAuthEntryPoint;
 import ir.manaz.security.jwt.JwtAuthenticationFilter;
+import ir.manaz.security.ratelimit.RateLimitFilter;
 import ir.manaz.security.user.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -11,6 +12,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -23,6 +25,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.time.Duration;
 import java.util.List;
 
 @Configuration
@@ -47,6 +50,7 @@ public class SecurityConfig {
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final RateLimitFilter rateLimitFilter;
     private final JwtAuthEntryPoint authEntryPoint;
     private final JwtAccessDeniedHandler accessDeniedHandler;
     private final AppSecurityProperties securityProperties;
@@ -72,11 +76,35 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
+                // هدرهای امنیتی مرورگر — پیش‌فرض Spring را با مقادیر صریح تکمیل می‌کنیم.
+                // API JSON است و در iframe/HTML نباید بارگذاری شود، پس CSP سخت‌گیرانه است.
+                .headers(headers -> headers
+                        .contentTypeOptions(Customizer.withDefaults())
+                        .frameOptions(fr -> fr.deny())
+                        // X-XSS-Protection عمداً تنظیم نمی‌شود — همه مرورگرهای مدرن حذفش کرده‌اند.
+                        // CSP جایگزین درست است.
+                        .referrerPolicy(rp -> rp.policyDirectives("no-referrer"))
+                        .httpStrictTransportSecurity(hsts -> hsts
+                                .includeSubDomains(true)
+                                .maxAgeInSeconds(Duration.ofDays(365).getSeconds()))
+                        // CSP نسبتاً باز است تا Swagger UI بشکنه نشود.
+                        // اصل مهم frame-ancestors است که clickjacking را می‌بندد.
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                "default-src 'self'; " +
+                                "img-src 'self' data:; " +
+                                "style-src 'self' 'unsafe-inline'; " +
+                                "script-src 'self' 'unsafe-inline'; " +
+                                "frame-ancestors 'none'; " +
+                                "base-uri 'self'")))
                 .authorizeHttpRequests(auth -> auth
                         // Preflight carries no credentials and must never be blocked.
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // actuator: health/info/prometheus عمومی است، بقیه نیاز به احراز.
+                        .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
+                        .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
                         .anyRequest().authenticated())
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

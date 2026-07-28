@@ -3,7 +3,9 @@ package ir.manaz.payroll.employee;
 import ir.manaz.audit.AuditEvent;
 import ir.manaz.audit.AuditLogService;
 import ir.manaz.audit.AuditOutcome;
+import ir.manaz.common.EntityCounterService;
 import ir.manaz.common.PageResponse;
+import ir.manaz.common.SecurityHelper;
 import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
@@ -11,14 +13,10 @@ import ir.manaz.payroll.contract.ContractRepository;
 import ir.manaz.payroll.employee.EmployeeDtos.CreateEmployeeRequest;
 import ir.manaz.payroll.employee.EmployeeDtos.EmployeeResponse;
 import ir.manaz.payroll.employee.EmployeeDtos.UpdateEmployeeRequest;
-import ir.manaz.security.jwt.AuthenticatedPrincipal;
 import ir.manaz.payroll.employee.EmployeeDtos.TerminateEmployeeRequest;
 import ir.manaz.tenant.TenantContext;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,6 +34,8 @@ public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final ContractRepository contractRepository;
     private final AuditLogService auditLogService;
+    private final SecurityHelper securityHelper;
+    private final EntityCounterService entityCounterService;
 
     // ─── Queries ─────────────────────────────────────────────
 
@@ -109,8 +109,6 @@ public class EmployeeService {
         Long tenantId = requireTenantId();
         Employee employee = employeeRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new NotFoundException("employee.not_found", id));
-
-        validateDates(req.birthDate(), req.hireDate());
 
         if (req.firstName() != null && !req.firstName().isBlank()) employee.setFirstName(req.firstName().trim());
         if (req.lastName() != null && !req.lastName().isBlank()) employee.setLastName(req.lastName().trim());
@@ -230,7 +228,7 @@ public class EmployeeService {
         if (employee.getTerminationDate() == null) {
             throw new ConflictException("employee.not_terminated", employee.getPersonnelCode());
         }
-        if (req.hireDate().isBefore(employee.getTerminationDate())) {
+        if (!req.hireDate().isAfter(employee.getTerminationDate())) {
             throw new BusinessException("employee.rehire_date.before_termination",
                     employee.getTerminationDate());
         }
@@ -275,7 +273,7 @@ public class EmployeeService {
         }
 
         employee.setDeletedAt(Instant.now());
-        employee.setDeletedBy(currentUserId());
+        employee.setDeletedBy(securityHelper.currentUserId());
         employee.setActive(false);
 
         audit(AuditEvent.EMPLOYEE_DELETED, employee, "personnelCode=" + employee.getPersonnelCode());
@@ -283,13 +281,9 @@ public class EmployeeService {
 
     // ─── Helpers ─────────────────────────────────────────────
 
-    /**
-     * تولید کد پرسنلی: EMP-{tenantId}-{4-digit-seq}
-     * الگوریتم: count(*) + 1 → pad به ۴ رقم.
-     * TODO(deferred #5): race-prone در concurrency بالا؛ UNIQUE constraint در DB safety-net است.
-     */
+    /** تولید کد پرسنلی: EMP-{tenantId}-{4-digit-seq} — اتمی از طریق شمارنده مستأجر. */
     private String generatePersonnelCode(Long tenantId) {
-        int next = employeeRepository.findMaxPersonnelSequence(tenantId) + 1;
+        long next = entityCounterService.nextValue(tenantId, "EMPLOYEE");
         return String.format("EMP-%d-%04d", tenantId, next);
     }
 
@@ -315,31 +309,9 @@ public class EmployeeService {
         return tenantId;
     }
 
-    private AuthenticatedPrincipal principal() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return (auth != null && auth.getPrincipal() instanceof AuthenticatedPrincipal p) ? p : null;
-    }
-
-    private Long currentUserId() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.userId();
-    }
-
-    private String currentUsername() {
-        AuthenticatedPrincipal p = principal();
-        return p == null ? null : p.username();
-    }
-
     private void audit(String event, Employee employee, String details) {
-        auditLogService.log(
-                event,
-                AuditOutcome.SUCCESS,
-                employee.getTenantId(),
-                currentUserId(),
-                currentUsername(),
-                details,
-                "EMPLOYEE",
-                String.valueOf(employee.getId())
-        );
+        auditLogService.logForCurrent(
+                event, AuditOutcome.SUCCESS, employee.getTenantId(),
+                "EMPLOYEE", employee.getId(), details);
     }
 }
