@@ -1,26 +1,23 @@
-# syntax=docker/dockerfile:1.6
-#
 # نکات سرعت‌بخش این Dockerfile:
-#  1. لایه دانلود dependency از COPY کد جداست — تا وقتی pom.xml عوض نشده،
+#  1. لایه dependency از COPY کد جداست — تا وقتی pom.xml عوض نشده،
 #     Docker همون لایه cache شده رو استفاده می‌کنه.
-#  2. --mount=type=cache روی /root/.m2 — حتی وقتی pom.xml عوض شد، فقط delta
-#     دانلود می‌شه نه کل .m2 (نیازمند BuildKit — پیش‌فرض Docker جدید).
-#  3. -T 1C روی mvn — build با چند thread موازی برابر با تعداد CPU.
-#  4. -o (offline) روی build نهایی — از رفتن به Maven Central روی هر بیلد
+#  2. -T 1C روی mvn — build با چند thread موازی برابر با تعداد CPU.
+#  3. -o (offline) روی build نهایی — از رفتن به Maven Central روی هر بیلد
 #     جلوگیری می‌کنه چون قبلاً go-offline اجرا شده.
+#
+# نکته: BuildKit cache mount (--mount=type=cache) عمداً استفاده نمی‌شود چون
+# Docker daemon لیارا BuildKit فعال ندارد.
 
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
 
 # لایه ۱: dependency resolution — فقط با تغییر pom.xml re-run می‌شه
 COPY pom.xml .
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -T 1C dependency:go-offline
+RUN mvn -B -T 1C dependency:go-offline
 
-# لایه ۲: build — با هر تغییر src re-run می‌شه ولی dependencyها از cache می‌آن
+# لایه ۲: build — با هر تغییر src re-run می‌شه ولی dependencyها از layer قبل می‌آن
 COPY src ./src
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -T 1C -o clean package -DskipTests
+RUN mvn -B -T 1C -o clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
