@@ -21,6 +21,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -83,7 +84,7 @@ public class SecurityConfig {
                         .frameOptions(fr -> fr.deny())
                         // X-XSS-Protection عمداً تنظیم نمی‌شود — همه مرورگرهای مدرن حذفش کرده‌اند.
                         // CSP جایگزین درست است.
-                        .referrerPolicy(rp -> rp.policyDirectives("no-referrer"))
+                        .referrerPolicy(rp -> rp.policy(ReferrerPolicy.NO_REFERRER))
                         .httpStrictTransportSecurity(hsts -> hsts
                                 .includeSubDomains(true)
                                 .maxAgeInSeconds(Duration.ofDays(365).getSeconds()))
