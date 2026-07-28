@@ -1,5 +1,38 @@
+# خروجی build
 target/
+*.jar
+*.war
+*.class
+
+# IDE / editor
 .idea/
-.mvn/
+.vscode/
 *.iml
+.settings/
+.project
+.classpath
+
+# Git / VCS
 .git/
+.gitignore
+.gitattributes
+
+# CI / docs که به runtime نیازی ندارن
+.github/
+README.md
+SECURITY.md
+
+# Maven wrapper و کش لوکال
+.mvn/
+mvnw
+mvnw.cmd
+
+# سکرت‌ها و env محلی — هرگز نباید توی image باشن
+.env
+.env.*
+!.env.example
+
+# لاگ و temp
+*.log
+logs/
+tmp/
