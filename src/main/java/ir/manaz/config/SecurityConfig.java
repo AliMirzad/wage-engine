@@ -55,10 +55,8 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 /*
-                 * CSRF stays off: SPA + API share the same site via /api proxy and
-                 * auth cookies use SameSite=Lax, so cross-site form posts cannot
-                 * attach them. Revisit if the SPA and API ever diverge onto
-                 * separate registrable domains with SameSite=None.
+                 * CSRF stays off. Cross-origin SPA (manaz.pro → api.manaz.pro) relies on
+                 * CORS + SameSite=None cookies. Same-site deployments can keep SameSite=Lax.
                  */
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> {
@@ -109,10 +107,10 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         var props = securityProperties.getCors();
         var config = new CorsConfiguration();
-        config.setAllowedOrigins(props.getAllowedOrigins());
+        config.setAllowedOrigins(props.allowedOriginList());
         config.setAllowedMethods(props.getAllowedMethods());
         config.setAllowedHeaders(props.getAllowedHeaders());
-        config.setExposedHeaders(List.of("Content-Disposition", "Set-Cookie"));
+        config.setExposedHeaders(List.of("Content-Disposition"));
         config.setAllowCredentials(true);
         config.setMaxAge(props.getMaxAge());
 

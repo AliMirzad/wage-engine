@@ -5,7 +5,6 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Getter
@@ -52,8 +51,8 @@ public class AppSecurityProperties {
     }
 
     /**
-     * httpOnly auth cookies for the SPA. Same-origin via /api proxy is assumed
-     * (SameSite=Lax). Set secure=false only for plain-http local backends.
+     * httpOnly auth cookies. For panel on manaz.pro + API on api.manaz.pro use
+     * domain=.manaz.pro, sameSite=None, secure=true (via env).
      */
     @Getter @Setter
     public static class Cookie {
@@ -62,7 +61,7 @@ public class AppSecurityProperties {
         private String refreshName = "manaz_refresh";
         private String accessPath = "/api";
         private String refreshPath = "/api/v1/auth";
-        /** Empty = host-only cookie (correct for Vite proxy / same-origin nginx). */
+        /** Empty = host-only cookie. Cross-subdomain: {@code .manaz.pro}. */
         private String domain = "";
         private boolean secure = true;
         private String sameSite = "Lax";
@@ -71,12 +70,25 @@ public class AppSecurityProperties {
     @Getter @Setter
     public static class Cors {
         private boolean enabled = true;
-        /** Exact origins, e.g. https://panel.manaz.pro — wildcards are rejected. */
-        private List<String> allowedOrigins = new ArrayList<>();
+        /**
+         * Comma-separated exact origins (no wildcards), e.g.
+         * {@code https://manaz.pro} or {@code https://manaz.pro,http://localhost:5173}.
+         */
+        private String allowedOrigins = "";
         private List<String> allowedMethods =
                 List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
         private List<String> allowedHeaders =
                 List.of("Authorization", "Content-Type", "Accept", "X-Requested-With");
         private long maxAge = 3600;
+
+        public List<String> allowedOriginList() {
+            if (allowedOrigins == null || allowedOrigins.isBlank()) {
+                return List.of();
+            }
+            return java.util.Arrays.stream(allowedOrigins.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+        }
     }
 }
