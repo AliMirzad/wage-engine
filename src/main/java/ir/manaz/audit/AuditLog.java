@@ -56,4 +56,12 @@ public class AuditLog {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    /**
+     * hash محتوای این ردیف. الان توسط اپ پر می‌شود ولی chain نمی‌سازد؛
+     * برای زنجیره‌ی integrity رسمی، migration بعدی باید prev_hash اضافه کند
+     * و BEFORE INSERT trigger روی DB بنویسد.
+     */
+    @Column(name = "row_hash")
+    private byte[] rowHash;
 }
