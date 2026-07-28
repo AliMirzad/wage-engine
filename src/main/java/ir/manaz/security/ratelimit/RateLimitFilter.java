@@ -1,6 +1,8 @@
 package ir.manaz.security.ratelimit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import ir.manaz.common.ErrorResponse;
 import ir.manaz.security.ratelimit.IpRateLimiter.RateLimitCategory;
 import jakarta.servlet.FilterChain;
@@ -45,8 +47,13 @@ public class RateLimitFilter extends OncePerRequestFilter {
             "/api/v1/auth/forgot-password", RateLimitCategory.FORGOT_PASSWORD
     );
 
+    // ObjectMapper محلی — به Jackson auto-config Spring وابسته نیستیم تا این فیلتر
+    // در هر شرایطی (حتی startup ناقص) بتواند پاسخ خطا بنویسد.
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
     private final IpRateLimiter limiter;
-    private final ObjectMapper objectMapper;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -93,6 +100,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
                 429, "Too Many Requests", "error.rate_limited",
                 "تعداد درخواست‌ها بیش از حد مجاز است. لطفاً کمی صبر کنید.",
                 path);
-        objectMapper.writeValue(response.getWriter(), body);
+        OBJECT_MAPPER.writeValue(response.getWriter(), body);
     }
 }
