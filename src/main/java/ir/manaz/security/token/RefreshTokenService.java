@@ -38,16 +38,6 @@ public class RefreshTokenService {
         return repository.save(token);
     }
 
-    @Transactional(readOnly = true)
-    public RefreshToken getActive(String jti) {
-        RefreshToken token = repository.findByJti(jti)
-                .orElseThrow(() -> new UnauthorizedException("auth.refresh_token.invalid"));
-        if (!token.isActive()) {
-            throw new UnauthorizedException("auth.refresh_token.invalid");
-        }
-        return token;
-    }
-
     /**
      * revoke ساده — تنها هنگام logout استفاده می‌شود؛ برای rotation از
      * {@link #consumeForRotation(String)} استفاده کنید تا اتمی و race-safe باشد.

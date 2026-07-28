@@ -10,9 +10,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.stream.Collectors;
 
@@ -58,6 +60,30 @@ public class GlobalExceptionHandler {
         var msg = resolve("error.validation", null) + " (" + detail + ")";
         var body = ErrorResponse.of(400, "Bad Request", "error.validation", msg, req.getRequestURI());
         return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * Query param با نوع اشتباه (مثلاً userId=abc یا from=notadate). قبلاً بدون handler
+     * می‌رفت به generic و 500 می‌داد — الان 400 با پیام واضح.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex,
+                                                            HttpServletRequest req) {
+        String requiredType = ex.getRequiredType() == null ? "?" : ex.getRequiredType().getSimpleName();
+        String detail = ex.getName() + " باید از نوع " + requiredType + " باشد";
+        var msg = resolve("error.validation", null) + " (" + detail + ")";
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.of(400, "Bad Request", "error.validation", msg, req.getRequestURI()));
+    }
+
+    /**
+     * Body غیرقابل parse (JSON خراب، فیلد اجباری null و ...). قبل از این handler،
+     * چنین مواردی به generic می‌رفت و 500 می‌داد.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleNotReadable(HttpMessageNotReadableException ex,
+                                                           HttpServletRequest req) {
+        return build(HttpStatus.BAD_REQUEST, "error.bad_request", null, req);
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

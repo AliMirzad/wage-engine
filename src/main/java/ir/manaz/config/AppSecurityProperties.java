@@ -17,9 +17,9 @@ public class AppSecurityProperties {
     private Jwt jwt = new Jwt();
     private Password password = new Password();
     private LoginAttempt loginAttempt = new LoginAttempt();
-    private PasswordReset passwordReset = new PasswordReset();
     private Cors cors = new Cors();
     private RateLimit rateLimit = new RateLimit();
+    private Cookie cookie = new Cookie();
 
 
     @Getter @Setter
@@ -44,16 +44,28 @@ public class AppSecurityProperties {
     }
 
     @Getter @Setter
-    public static class PasswordReset {
-        private int tokenExpirationMinutes = 30;
-    }
-
-    @Getter @Setter
     public static class RateLimit {
         /** سقف کل درخواست‌های auth از هر IP در دقیقه (login/refresh/reset-password). */
         private int authPerMinute = 20;
         /** سقف مخصوص forgot-password در دقیقه — سخت‌گیرانه‌تر چون قابل abuse برای spam. */
         private int forgotPasswordPerMinute = 5;
+    }
+
+    /**
+     * httpOnly auth cookies for the SPA. Same-origin via /api proxy is assumed
+     * (SameSite=Lax). Set secure=false only for plain-http local backends.
+     */
+    @Getter @Setter
+    public static class Cookie {
+        private boolean enabled = true;
+        private String accessName = "manaz_access";
+        private String refreshName = "manaz_refresh";
+        private String accessPath = "/api";
+        private String refreshPath = "/api/v1/auth";
+        /** Empty = host-only cookie (correct for Vite proxy / same-origin nginx). */
+        private String domain = "";
+        private boolean secure = true;
+        private String sameSite = "Lax";
     }
 
     @Getter @Setter

@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * fallback در محیط dev — به‌جای ارسال واقعی، محتوای ایمیل را در سطح debug
- * لاگ می‌کند. عمداً DEBUG است تا رمز اولیه/توکن reset در لاگ prod (که
+ * لاگ می‌کند. عمداً DEBUG است تا رمز اولیه/کد OTP در لاگ prod (که
  * معمولاً INFO+ است) لو نرود اگر اپراتور اشتباهاً enabled=false گذاشت.
  */
 @Slf4j
@@ -15,8 +15,13 @@ import org.springframework.stereotype.Service;
 public class LoggingEmailService implements EmailService {
 
     @Override
-    public void sendPasswordReset(String to, String rawToken, int validMinutes) {
-        log.debug("[EMAIL:password-reset] to={} token={} validMinutes={}", to, rawToken, validMinutes);
+    public void sendPasswordResetOtp(String to, String code, int validMinutes) {
+        log.debug("[EMAIL:password-reset-otp] to={} code={} validMinutes={}", to, code, validMinutes);
+    }
+
+    @Override
+    public void sendEmailVerificationOtp(String to, String code, int validMinutes) {
+        log.debug("[EMAIL:email-verification-otp] to={} code={} validMinutes={}", to, code, validMinutes);
     }
 
     @Override

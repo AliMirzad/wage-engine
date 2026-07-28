@@ -12,12 +12,10 @@ public enum Permission {
     // Tenant / company management (SUPER_ADMIN only)
     TENANT_READ,
     TENANT_WRITE,
-    TENANT_DELETE,
 
     // User management inside a tenant
     USER_READ,
     USER_WRITE,
-    USER_DELETE,
 
     // Role & permission management
     ROLE_READ,

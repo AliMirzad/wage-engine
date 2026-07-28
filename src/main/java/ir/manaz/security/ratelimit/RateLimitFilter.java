@@ -44,7 +44,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
             "/api/v1/auth/login", RateLimitCategory.AUTH,
             "/api/v1/auth/refresh", RateLimitCategory.AUTH,
             "/api/v1/auth/reset-password", RateLimitCategory.AUTH,
-            "/api/v1/auth/forgot-password", RateLimitCategory.FORGOT_PASSWORD
+            "/api/v1/auth/verify-email", RateLimitCategory.AUTH,
+            "/api/v1/auth/forgot-password", RateLimitCategory.FORGOT_PASSWORD,
+            "/api/v1/auth/resend-verification", RateLimitCategory.FORGOT_PASSWORD
     );
 
     // ObjectMapper محلی — به Jackson auto-config Spring وابسته نیستیم تا این فیلتر

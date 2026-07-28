@@ -11,8 +11,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 
 /**
  * پیاده‌سازی SMTP. با {@code app.email.enabled=true} فعال می‌شود.
@@ -32,19 +30,33 @@ public class SmtpEmailService implements EmailService {
 
     @Override
     @Async
-    public void sendPasswordReset(String to, String rawToken, int validMinutes) {
-        String encoded = URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
-        String link = props.getPanelBaseUrl() + "/reset-password?token=" + encoded;
-        String subject = "بازیابی رمز عبور";
+    public void sendPasswordResetOtp(String to, String code, int validMinutes) {
+        String subject = "کد بازیابی رمز عبور";
         String body = """
                 کاربر گرامی،
 
-                برای تعیین رمز جدید روی لینک زیر کلیک کنید (اعتبار: %d دقیقه):
+                کد بازیابی رمز عبور شما: %s
+
+                این کد تا %d دقیقه معتبر است. آن را در پنل وارد کنید تا رمز جدید تعیین شود.
+
+                اگر شما این درخواست را نداده‌اید، این ایمیل را نادیده بگیرید — رمز فعلی شما تغییری نمی‌کند.
+                """.formatted(code, validMinutes);
+        send(to, subject, body);
+    }
+
+    @Override
+    @Async
+    public void sendEmailVerificationOtp(String to, String code, int validMinutes) {
+        String subject = "تأیید ایمیل حساب کاربری";
+        String body = """
+                برای تأیید ایمیل حساب کاربری خود، کد زیر را در پنل وارد کنید:
 
                 %s
 
-                اگر شما این درخواست را نداده‌اید، این ایمیل را نادیده بگیرید — رمز فعلی شما تغییری نمی‌کند.
-                """.formatted(validMinutes, link);
+                این کد تا %d دقیقه معتبر است.
+
+                اگر شما حسابی نساخته‌اید، این ایمیل را نادیده بگیرید.
+                """.formatted(code, validMinutes);
         send(to, subject, body);
     }
 

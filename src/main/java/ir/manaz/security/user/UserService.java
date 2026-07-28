@@ -8,6 +8,8 @@ import ir.manaz.email.EmailService;
 import ir.manaz.exception.BusinessException;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
+import ir.manaz.security.otp.OtpPurpose;
+import ir.manaz.security.otp.OtpService;
 import ir.manaz.security.role.DefaultRoles;
 import ir.manaz.security.role.Permission;
 import ir.manaz.security.role.Role;
@@ -38,7 +40,10 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
     private final RefreshTokenService refreshTokenService;
+    private final OtpService otpService;
     private final EmailService emailService;
+
+    private static final int EMAIL_VERIFICATION_VALID_MINUTES = 10;
 
     /** نقش‌های سیستمی که مدیر شرکت اجازه تخصیص دارد. SUPER_ADMIN و COMPANY_ADMIN عمداً نیستند. */
     private static final Set<String> ASSIGNABLE_SYSTEM_ROLES = Set.of(
@@ -48,7 +53,7 @@ public class UserService {
 
     /** دسترسی‌هایی که تخصیص‌شان توسط مدیر شرکت به ارتقای دسترسی منجر می‌شود. */
     private static final Set<Permission> ESCALATION_PERMISSIONS = EnumSet.of(
-            Permission.TENANT_READ, Permission.TENANT_WRITE, Permission.TENANT_DELETE,
+            Permission.TENANT_READ, Permission.TENANT_WRITE,
             Permission.ROLE_WRITE
     );
 
@@ -123,6 +128,9 @@ public class UserService {
         user.setEnabled(false);
         userRepository.save(user);
         refreshTokenService.revokeAllForUser(user.getId());
+        // مسیرهای بازیابی رمز و تأیید ایمیل هم بسته شوند تا کاربر غیرفعال با
+        // کد قدیمی OTP نتواند رمز عوض کند یا ایمیلش را تأیید کند.
+        otpService.invalidateAllForUser(user.getId());
 
         auditLogService.log(AuditEvent.USER_UPDATED, AuditOutcome.SUCCESS,
                 user.getTenantId(), actorUserId, actorUsername,
@@ -163,6 +171,7 @@ public class UserService {
         user.setLockedUntil(null);
         userRepository.save(user);
         refreshTokenService.revokeAllForUser(user.getId());
+        otpService.invalidateAllForUser(user.getId());
 
         auditLogService.log(AuditEvent.PASSWORD_RESET_COMPLETE, AuditOutcome.SUCCESS,
                 user.getTenantId(), actorUserId, actorUsername,
@@ -236,6 +245,10 @@ public class UserService {
 
         emailService.sendInitialCredentials(user.getEmail(), username, rawPassword);
 
+        // کد تأیید ایمیل — بدون آن، reset-password برای کاربر کار نمی‌کند.
+        String verifyCode = otpService.issue(user.getId(), OtpPurpose.EMAIL_VERIFICATION);
+        emailService.sendEmailVerificationOtp(user.getEmail(), verifyCode, EMAIL_VERIFICATION_VALID_MINUTES);
+
         return new CreateUserResponse(toResponse(user), rawPassword);
     }
 
@@ -255,6 +268,7 @@ public class UserService {
         user.setEnabled(true);
         userRepository.save(user);
         refreshTokenService.revokeAllForUser(user.getId());
+        otpService.invalidateAllForUser(user.getId());
 
         auditLogService.log(AuditEvent.PASSWORD_RESET_COMPLETE, AuditOutcome.SUCCESS,
                 tenantId, actorUserId, actorUsername,

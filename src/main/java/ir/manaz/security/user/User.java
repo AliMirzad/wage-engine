@@ -63,6 +63,14 @@ public class User extends BaseEntity implements TenantAware {
     @Column(name = "password_changed_at")
     private Instant passwordChangedAt;
 
+    /** زمان تأیید ایمیل توسط کاربر (با OTP). null یعنی هنوز تأیید نشده. */
+    @Column(name = "email_verified_at")
+    private Instant emailVerifiedAt;
+
+    public boolean isEmailVerified() {
+        return emailVerifiedAt != null;
+    }
+
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name = "user_roles",

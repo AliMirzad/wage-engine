@@ -10,7 +10,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Validates a 10-digit Iranian national ID (کد ملی) including the checksum digit.
+ * Validates a 10-digit Iranian national ID (کد ملی): length + not all-identical digits.
  * Null values are allowed — combine with {@code @NotBlank} if the field is required.
  */
 @Documented

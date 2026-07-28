@@ -6,6 +6,9 @@ import ir.manaz.audit.AuditOutcome;
 import ir.manaz.common.PageResponse;
 import ir.manaz.exception.ConflictException;
 import ir.manaz.exception.NotFoundException;
+import ir.manaz.email.EmailService;
+import ir.manaz.security.otp.OtpPurpose;
+import ir.manaz.security.otp.OtpService;
 import ir.manaz.security.role.DefaultRoles;
 import ir.manaz.security.role.Role;
 import ir.manaz.security.role.RoleRepository;
@@ -40,6 +43,10 @@ public class TenantService {
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final OtpService otpService;
+    private final EmailService emailService;
+
+    private static final int EMAIL_VERIFICATION_VALID_MINUTES = 10;
 
     @Transactional(readOnly = true)
     public PageResponse<TenantResponse> list(Pageable pageable) {
@@ -106,6 +113,11 @@ public class TenantService {
                 tenant.getId(), actorUserId, actorUsername,
                 "Tenant '" + tenant.getCode() + "' created with admin '" + admin.getUsername() + "'");
         log.info("Tenant {} created by {} with admin {}", tenant.getCode(), actorUsername, admin.getUsername());
+
+        // ارسال کد تأیید ایمیل به مدیر شرکت. تا قبل از تأیید، reset-password
+        // برای این کاربر کار نمی‌کند — دفاع در برابر ایمیل‌های اشتباهی که ادمین سکو زده.
+        String verifyCode = otpService.issue(admin.getId(), OtpPurpose.EMAIL_VERIFICATION);
+        emailService.sendEmailVerificationOtp(admin.getEmail(), verifyCode, EMAIL_VERIFICATION_VALID_MINUTES);
 
         return toResponse(tenant, admin.getId(), admin.getUsername());
     }

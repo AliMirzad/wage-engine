@@ -75,11 +75,19 @@ app:
     login-attempt:
       max-attempts: 5
       lock-duration-minutes: 15
-    password-reset:
-      token-expiration-minutes: 30
     cors:
       enabled: ${CORS_ENABLED:false}
       allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+    cookie:
+      enabled: ${AUTH_COOKIE_ENABLED:true}
+      access-name: manaz_access
+      refresh-name: manaz_refresh
+      access-path: /api
+      refresh-path: /api/v1/auth
+      domain: ${AUTH_COOKIE_DOMAIN:}
+      # false فقط برای backend لوکال روی HTTP؛ در prod همیشه true بماند
+      secure: ${AUTH_COOKIE_SECURE:true}
+      same-site: Lax
     super-admin:
       enabled: ${SUPER_ADMIN_ENABLED:true}
       username: ${SUPER_ADMIN_USERNAME:admin}

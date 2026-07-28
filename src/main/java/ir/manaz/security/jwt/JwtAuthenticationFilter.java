@@ -1,6 +1,7 @@
 package ir.manaz.security.jwt;
 
 import io.jsonwebtoken.ExpiredJwtException;
+import ir.manaz.security.auth.AuthCookieService;
 import ir.manaz.tenant.TenantContext;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -32,6 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String PREFIX = "Bearer ";
 
     private final JwtService jwtService;
+    private final AuthCookieService authCookieService;
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
@@ -89,6 +91,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(header) && header.startsWith(PREFIX)) {
             return header.substring(PREFIX.length());
         }
-        return null;
+        return authCookieService.readAccessToken(request);
     }
 }

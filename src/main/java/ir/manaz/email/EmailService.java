@@ -11,8 +11,11 @@ package ir.manaz.email;
  */
 public interface EmailService {
 
-    /** لینک بازیابی رمز به‌همراه مدت اعتبار. */
-    void sendPasswordReset(String to, String rawToken, int validMinutes);
+    /** کد ۶ رقمی بازیابی رمز به‌همراه مدت اعتبار (دقیقه). */
+    void sendPasswordResetOtp(String to, String code, int validMinutes);
+
+    /** کد ۶ رقمی تأیید ایمیل که پس از ساخت حساب برای کاربر ارسال می‌شود. */
+    void sendEmailVerificationOtp(String to, String code, int validMinutes);
 
     /**
      * رمز اولیه‌ای که سرور برای کاربر تازه ساخته‌شده تولید کرده — یک بار مصرف.

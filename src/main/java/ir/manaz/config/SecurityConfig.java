@@ -4,16 +4,12 @@ import ir.manaz.security.jwt.JwtAccessDeniedHandler;
 import ir.manaz.security.jwt.JwtAuthEntryPoint;
 import ir.manaz.security.jwt.JwtAuthenticationFilter;
 import ir.manaz.security.ratelimit.RateLimitFilter;
-import ir.manaz.security.user.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.Customizer;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -37,7 +33,6 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_ENDPOINTS = {
             "/api/v1/auth/login",
-            "/api/v1/auth/register",
             "/api/v1/auth/refresh",
             "/api/v1/auth/forgot-password",
             "/api/v1/auth/reset-password",
@@ -60,10 +55,10 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 /*
-                 * CSRF stays off by design, not by omission: authentication is a
-                 * bearer token in a header, never a cookie, so a cross-site form
-                 * post cannot carry credentials. Re-enable it only if this API
-                 * ever starts authenticating via cookies.
+                 * CSRF stays off: SPA + API share the same site via /api proxy and
+                 * auth cookies use SameSite=Lax, so cross-site form posts cannot
+                 * attach them. Revisit if the SPA and API ever diverge onto
+                 * separate registrable domains with SameSite=None.
                  */
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> {
@@ -117,8 +112,8 @@ public class SecurityConfig {
         config.setAllowedOrigins(props.getAllowedOrigins());
         config.setAllowedMethods(props.getAllowedMethods());
         config.setAllowedHeaders(props.getAllowedHeaders());
-        config.setExposedHeaders(List.of("Content-Disposition"));
-        config.setAllowCredentials(false);
+        config.setExposedHeaders(List.of("Content-Disposition", "Set-Cookie"));
+        config.setAllowCredentials(true);
         config.setMaxAge(props.getMaxAge());
 
         var source = new UrlBasedCorsConfigurationSource();
@@ -129,18 +124,5 @@ public class SecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
-    }
-
-    @Bean
-    public DaoAuthenticationProvider authenticationProvider(CustomUserDetailsService userDetailsService,
-                                                            PasswordEncoder passwordEncoder) {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
-        provider.setPasswordEncoder(passwordEncoder);
-        return provider;
-    }
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration cfg) throws Exception {
-        return cfg.getAuthenticationManager();
     }
 }

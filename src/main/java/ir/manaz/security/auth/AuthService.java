@@ -14,8 +14,8 @@ import ir.manaz.security.role.Role;
 import ir.manaz.security.role.RoleRepository;
 import ir.manaz.tenant.Tenant;
 import ir.manaz.tenant.TenantRepository;
-import ir.manaz.security.token.PasswordResetToken;
-import ir.manaz.security.token.PasswordResetTokenRepository;
+import ir.manaz.security.otp.OtpPurpose;
+import ir.manaz.security.otp.OtpService;
 import ir.manaz.security.token.RefreshToken;
 import ir.manaz.security.token.RefreshTokenService;
 import ir.manaz.security.user.CustomUserDetails;
@@ -31,12 +31,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.Base64;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -53,9 +48,12 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final LoginAttemptService loginAttemptService;
     private final AuditLogService auditLogService;
-    private final PasswordResetTokenRepository resetTokenRepository;
+    private final OtpService otpService;
     private final AppSecurityProperties props;
     private final EmailService emailService;
+
+    // مدت اعتبار OTP بازیابی رمز / تأیید ایمیل — با {@link OtpService} هماهنگ نگه دار.
+    private static final int OTP_VALID_MINUTES = 10;
 
     // ------------------------------- LOGIN -------------------------------
     @Transactional
@@ -102,10 +100,13 @@ public class AuthService {
 
     // ------------------------------- REFRESH -------------------------------
     @Transactional
-    public LoginResponse refresh(RefreshTokenRequest req, HttpServletRequest httpReq) {
+    public LoginResponse refresh(String refreshToken, HttpServletRequest httpReq) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new UnauthorizedException("auth.refresh_token.invalid");
+        }
         Claims claims;
         try {
-            claims = jwtService.parse(req.refreshToken());
+            claims = jwtService.parse(refreshToken);
         } catch (Exception ex) {
             throw new UnauthorizedException("auth.refresh_token.invalid");
         }
@@ -115,7 +116,7 @@ public class AuthService {
 
         String jti = claims.getId();
         // consumeForRotation اتمی است: در صورت race یا replay خطا می‌اندازد
-        // و همه sessionها را baطل می‌کند تا مهاجم نتواند از توکن بازنشسته سود ببرد.
+        // و همه sessionها را باطل می‌کند تا مهاجم نتواند از توکن بازنشسته سود ببرد.
         RefreshToken stored = refreshTokenService.consumeForRotation(jti);
 
         User user = userRepository.findById(stored.getUserId())
@@ -127,15 +128,17 @@ public class AuthService {
 
     // ------------------------------- LOGOUT -------------------------------
     @Transactional
-    public void logout(LogoutRequest req, Long userId, String username, Long tenantId) {
-        try {
-            Claims claims = jwtService.parse(req.refreshToken());
-            Number tokenUid = claims.get(JwtService.CLAIM_USER_ID, Number.class);
-            // فقط توکنی که به همین کاربر تعلق دارد باطل شود — جلوی revoke کردن session دیگران
-            if (tokenUid != null && userId != null && tokenUid.longValue() == userId) {
-                refreshTokenService.revoke(claims.getId());
-            }
-        } catch (Exception ignored) { /* silently succeed */ }
+    public void logout(String refreshToken, Long userId, String username, Long tenantId) {
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            try {
+                Claims claims = jwtService.parse(refreshToken);
+                Number tokenUid = claims.get(JwtService.CLAIM_USER_ID, Number.class);
+                // فقط توکنی که به همین کاربر تعلق دارد باطل شود — جلوی revoke کردن session دیگران
+                if (tokenUid != null && userId != null && tokenUid.longValue() == userId) {
+                    refreshTokenService.revoke(claims.getId());
+                }
+            } catch (Exception ignored) { /* silently succeed */ }
+        }
         auditLogService.log(AuditEvent.LOGOUT, AuditOutcome.SUCCESS, tenantId, userId, username, null);
     }
 
@@ -154,50 +157,51 @@ public class AuthService {
         userRepository.save(user);
 
         refreshTokenService.revokeAllForUser(user.getId());
-        resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
 
         auditLogService.log(AuditEvent.PASSWORD_CHANGE, AuditOutcome.SUCCESS,
                 user.getTenantId(), user.getId(), user.getUsername(), null);
     }
 
     // ------------------------------- FORGOT PASSWORD -------------------------------
+    /**
+     * تولید کد OTP بازیابی رمز و ارسال به ایمیل. برای جلوگیری از enumeration،
+     * پاسخ همیشه یکسان (204) است — چه کاربر وجود داشته باشد چه نه.
+     * <p>
+     * الزام تأیید ایمیل: reset-password فقط برای کاربرانی که ایمیلشان تأیید شده
+     * قابل استفاده است — جلوی سواستفاده از ایمیل غلطی که SUPER_ADMIN موقع
+     * onboarding زده را می‌گیرد. کاربر باید اول ایمیل را تأیید کند.
+     */
     @Transactional
     public void forgotPassword(ForgotPasswordRequest req) {
-        // Always respond identically to avoid email enumeration
-        userRepository.findByEmailIgnoreCase(req.email()).ifPresent(user -> {
-            resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
-            String rawToken = generateRawToken();
-            String hash = sha256(rawToken);
-
-            PasswordResetToken token = PasswordResetToken.builder()
-                    .userId(user.getId())
-                    .tokenHash(hash)
-                    .createdAt(Instant.now())
-                    .expiresAt(Instant.now().plus(
-                            props.getPasswordReset().getTokenExpirationMinutes(), ChronoUnit.MINUTES))
-                    .used(false)
-                    .build();
-            resetTokenRepository.save(token);
-
-            int validMinutes = props.getPasswordReset().getTokenExpirationMinutes();
-            emailService.sendPasswordReset(user.getEmail(), rawToken, validMinutes);
-
-            auditLogService.log(AuditEvent.PASSWORD_RESET_REQUEST, AuditOutcome.SUCCESS,
-                    user.getTenantId(), user.getId(), user.getUsername(), null);
-        });
+        String email = req.email() == null ? "" : req.email().trim().toLowerCase();
+        userRepository.findByEmailIgnoreCase(email)
+                .filter(User::isEnabled)
+                .filter(User::isEmailVerified)
+                .ifPresent(user -> {
+                    String code = otpService.issue(user.getId(), OtpPurpose.PASSWORD_RESET);
+                    emailService.sendPasswordResetOtp(user.getEmail(), code, OTP_VALID_MINUTES);
+                    auditLogService.log(AuditEvent.PASSWORD_RESET_REQUEST, AuditOutcome.SUCCESS,
+                            user.getTenantId(), user.getId(), user.getUsername(), null);
+                });
     }
 
     // ------------------------------- RESET PASSWORD -------------------------------
+    /**
+     * تعیین رمز جدید با کد OTP. کاربر با ایمیل مشخص می‌شود؛ کد ۶ رقمی از ایمیل و
+     * رمز جدید در body می‌آید. در صورت موفقیت همه‌ی sessionها revoke می‌شوند.
+     */
     @Transactional
     public void resetPassword(ResetPasswordRequest req) {
-        String hash = sha256(req.token());
-        PasswordResetToken token = resetTokenRepository.findByTokenHash(hash)
-                .orElseThrow(() -> new UnauthorizedException("auth.reset_token.invalid"));
-        if (!token.isValid()) {
-            throw new UnauthorizedException("auth.reset_token.invalid");
+        String email = req.email() == null ? "" : req.email().trim().toLowerCase();
+        User user = userRepository.findByEmailIgnoreCase(email)
+                .orElseThrow(() -> new UnauthorizedException("otp.invalid"));
+
+        // پیام‌های یکسان برای کاربر disabled/unverified تا مهاجم نتواند بین حالت‌ها تمایز بدهد.
+        if (!user.isEnabled() || !user.isEmailVerified()) {
+            throw new UnauthorizedException("otp.invalid");
         }
-        User user = userRepository.findById(token.getUserId())
-                .orElseThrow(() -> new NotFoundException("user.not_found"));
+
+        otpService.verifyAndConsume(user.getId(), OtpPurpose.PASSWORD_RESET, req.code());
 
         user.setPasswordHash(passwordEncoder.encode(req.newPassword()));
         user.setPasswordChangedAt(Instant.now());
@@ -206,12 +210,43 @@ public class AuthService {
         user.setLockedUntil(null);
         userRepository.save(user);
 
-        resetTokenRepository.invalidateAllForUser(user.getId(), Instant.now());
-
         refreshTokenService.revokeAllForUser(user.getId());
 
         auditLogService.log(AuditEvent.PASSWORD_RESET_COMPLETE, AuditOutcome.SUCCESS,
                 user.getTenantId(), user.getId(), user.getUsername(), null);
+    }
+
+    // ------------------------------- VERIFY EMAIL -------------------------------
+    /**
+     * تأیید ایمیل کاربر لاگین‌شده با کد OTP دریافت‌شده در ایمیل.
+     * تا قبل از این تأیید، مسیرهای حساس مثل reset-password قابل استفاده نیستند.
+     */
+    @Transactional
+    public void verifyEmail(Long userId, String code) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("user.not_found"));
+        if (user.isEmailVerified()) {
+            // idempotent — چون کاربر ممکن است تصادفاً چند بار submit کند
+            return;
+        }
+        otpService.verifyAndConsume(user.getId(), OtpPurpose.EMAIL_VERIFICATION, code);
+        user.setEmailVerifiedAt(Instant.now());
+        userRepository.save(user);
+        auditLogService.log(AuditEvent.EMAIL_VERIFIED, AuditOutcome.SUCCESS,
+                user.getTenantId(), user.getId(), user.getUsername(), null);
+    }
+
+    /**
+     * ارسال مجدد کد تأیید ایمیل. اگر ایمیل قبلاً تأیید شده، کاری نمی‌کند
+     * تا endpoint برای فرستادن spam قابل سواستفاده نباشد.
+     */
+    @Transactional
+    public void resendEmailVerification(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new NotFoundException("user.not_found"));
+        if (user.isEmailVerified()) return;
+        String code = otpService.issue(user.getId(), OtpPurpose.EMAIL_VERIFICATION);
+        emailService.sendEmailVerificationOtp(user.getEmail(), code, OTP_VALID_MINUTES);
     }
 
     @Transactional(readOnly = true)
@@ -245,24 +280,6 @@ public class AuthService {
                 props.getJwt().getAccessTokenExpiration() / 1000, info);
     }
 
-    private String generateRawToken() {
-        byte[] bytes = new byte[48];
-        new SecureRandom().nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    private String sha256(String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] out = md.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : out) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (Exception e) {
-            throw new IllegalStateException(e);
-        }
-    }
-
     private String extractIp(HttpServletRequest req) {
         String h = req.getHeader("X-Forwarded-For");
         if (h != null && !h.isBlank()) return h.split(",")[0].trim();
@@ -279,6 +296,7 @@ public class AuthService {
                 .collect(Collectors.toSet());
         return new UserInfo(
                 user.getId(), user.getTenantId(), user.getUsername(), user.getEmail(),
+                user.isEmailVerified(),
                 user.getFirstName(), user.getLastName(), roles, perms
         );
     }
