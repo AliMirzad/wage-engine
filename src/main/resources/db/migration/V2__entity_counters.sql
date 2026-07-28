@@ -23,20 +23,26 @@ CREATE TABLE entity_counters (
 -- مقداردهی اولیه بر اساس داده موجود تا شماره‌های بعدی از جای درست شروع شوند.
 -- در نصب تازه هیچ ردیفی درج نمی‌شود؛ در نصب قدیمی، بیشترین شماره تخصیص‌یافته
 -- به‌عنوان current_value ذخیره می‌شود.
--- NULLIF از empty string در برابر رکوردهای legacy با فرمت متفاوت (مثلاً بدون
--- تکه سوم بعد از خط تیره) محافظت می‌کند. MAX خود NULL را نادیده می‌گیرد.
+--
+-- برای مقاومت در برابر داده legacy با هر فرمتی (بدون بخش سوم، non-numeric،
+-- کاراکترهای عجیب و غیره)، از regex برای استخراج فقط دنباله ارقام انتهایی
+-- استفاده می‌کنیم. رکوردهایی که با ارقام تمام نمی‌شوند نادیده گرفته می‌شوند —
+-- برای شمارنده مهم نیستند، counter برای رکوردهای بعدی از ۰+۱ شروع می‌کند و
+-- constraint UNIQUE هر تصادف احتمالی را می‌گیرد.
 INSERT INTO entity_counters (tenant_id, entity_type, current_value)
 SELECT tenant_id,
        'EMPLOYEE',
-       COALESCE(MAX(CAST(NULLIF(SPLIT_PART(personnel_code, '-', 3), '') AS INTEGER)), 0)
+       COALESCE(MAX(CAST((regexp_match(personnel_code, '(\d+)$'))[1] AS INTEGER)), 0)
 FROM employees
+WHERE personnel_code ~ '\d+$'
 GROUP BY tenant_id
 ON CONFLICT (tenant_id, entity_type) DO NOTHING;
 
 INSERT INTO entity_counters (tenant_id, entity_type, current_value)
 SELECT tenant_id,
        'CONTRACT',
-       COALESCE(MAX(CAST(NULLIF(SPLIT_PART(contract_number, '-', 3), '') AS INTEGER)), 0)
+       COALESCE(MAX(CAST((regexp_match(contract_number, '(\d+)$'))[1] AS INTEGER)), 0)
 FROM contracts
+WHERE contract_number ~ '\d+$'
 GROUP BY tenant_id
 ON CONFLICT (tenant_id, entity_type) DO NOTHING;
