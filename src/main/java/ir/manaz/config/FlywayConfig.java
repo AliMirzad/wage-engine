@@ -21,15 +21,24 @@ public class FlywayConfig {
     @Value("${spring.datasource.password}")
     private String password;
 
-    @Bean(name = "flyway", initMethod = "migrate")
+    @Bean(name = "flyway")
     public Flyway flyway() {
         log.info("Configuring Flyway for {}", url);
-        return Flyway.configure()
+        Flyway flyway = Flyway.configure()
                 .dataSource(url, username, password)
                 .locations("classpath:db/migration")
                 .baselineOnMigrate(true)
                 .baselineVersion("0")
                 .load();
+
+        // repair قبل از migrate — اگر checksum فایل با آنچه قبلاً apply شده
+        // فرق داشته باشد، schema_history را با محتوای فعلی sync می‌کند.
+        // برای بار اول که V2 با یک فرمت apply و سپس فرمت‌بندی SQL همان
+        // migration اصلاح شد، این مسیر خودکار حل مشکل است. بی‌ضرر روی
+        // DBهای تمیز چون فقط چک می‌کند و اگر تفاوتی نبود کاری نمی‌کند.
+        flyway.repair();
+        flyway.migrate();
+        return flyway;
     }
 
     /**
