@@ -1,8 +1,10 @@
 -- =========================================================================
 --  V1 : اسکیمای پایه سامانه دستمزد مناز
 --
---  این فایل تجمیع مهاجرت‌های V1..V14 قبلی است. به‌جای بازسازی تاریخچه
---  تغییرات، وضعیت نهایی را مستقیماً می‌سازد.
+--  این فایل تجمیع مهاجرت‌های تاریخی است — به‌جای بازسازی تاریخچه‌ی تغییرات،
+--  وضعیت نهایی را مستقیماً می‌سازد. شامل ادغام V4 (otp_codes +
+--  email_verified_at، جایگزین password_reset_tokens) و V5 (حذف permissionهای
+--  USER_DELETE/TENANT_DELETE بلااستفاده).
 --
 --  قواعد پایه:
 --   * هیچ حذف سختی وجود ندارد — تاریخچه برای الزامات قانونی و حسابرسی می‌ماند
@@ -84,6 +86,7 @@ CREATE TABLE users (
     failed_login_attempts  INTEGER      NOT NULL DEFAULT 0,
     last_login_at          TIMESTAMP,
     password_changed_at    TIMESTAMP,
+    email_verified_at      TIMESTAMP,
     created_at             TIMESTAMP    NOT NULL,
     updated_at             TIMESTAMP,
     created_by             BIGINT,
@@ -126,19 +129,26 @@ CREATE TABLE refresh_tokens (
 CREATE UNIQUE INDEX idx_refresh_token_jti  ON refresh_tokens(jti);
 CREATE INDEX        idx_refresh_token_user ON refresh_tokens(user_id);
 
--- ---------- password_reset_tokens ----------
-CREATE TABLE password_reset_tokens (
-    id          BIGSERIAL PRIMARY KEY,
-    token_hash  VARCHAR(128) NOT NULL,
-    user_id     BIGINT       NOT NULL,
-    expires_at  TIMESTAMP    NOT NULL,
-    created_at  TIMESTAMP    NOT NULL,
-    used        BOOLEAN      NOT NULL DEFAULT FALSE,
-    used_at     TIMESTAMP,
-    CONSTRAINT fk_pwd_reset_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+-- ---------- otp_codes ----------
+-- کدهای یک‌بارمصرف برای PASSWORD_RESET و EMAIL_VERIFICATION. جایگزین جدول
+-- قدیمی password_reset_tokens شد چون:
+--   * چند purpose در یک جدول (بازیابی رمز، تأیید ایمیل، در آینده 2FA)
+--   * فیلد attempts برای دفاع در برابر brute-force کد ۶ رقمی
+--   * فقط hash ذخیره می‌شود؛ کد raw فقط داخل ایمیل می‌رود
+CREATE TABLE otp_codes (
+    id             BIGSERIAL   PRIMARY KEY,
+    user_id        BIGINT      NOT NULL,
+    code_hash      VARCHAR(128) NOT NULL,
+    purpose        VARCHAR(40) NOT NULL,   -- PASSWORD_RESET | EMAIL_VERIFICATION
+    attempts       INTEGER     NOT NULL DEFAULT 0,
+    max_attempts   INTEGER     NOT NULL DEFAULT 5,
+    expires_at     TIMESTAMP   NOT NULL,
+    created_at     TIMESTAMP   NOT NULL,
+    consumed_at    TIMESTAMP,
+    CONSTRAINT fk_otp_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-CREATE UNIQUE INDEX idx_pwd_reset_token_hash ON password_reset_tokens(token_hash);
-CREATE INDEX        idx_pwd_reset_user       ON password_reset_tokens(user_id);
+CREATE INDEX idx_otp_user_purpose ON otp_codes(user_id, purpose);
+CREATE INDEX idx_otp_expires      ON otp_codes(expires_at);
 
 -- ---------- audit_logs ----------
 CREATE TABLE audit_logs (
@@ -185,11 +195,9 @@ INSERT INTO permissions (code, description_fa, category) VALUES
     -- شرکت‌ها
     ('TENANT_READ',            'مشاهده شرکت‌ها',                    'TENANT'),
     ('TENANT_WRITE',           'ایجاد و ویرایش شرکت‌ها',            'TENANT'),
-    ('TENANT_DELETE',          'حذف شرکت‌ها',                       'TENANT'),
     -- کاربران
     ('USER_READ',              'مشاهده کاربران',                    'USER'),
     ('USER_WRITE',             'ایجاد و ویرایش کاربران',            'USER'),
-    ('USER_DELETE',            'حذف کاربران',                       'USER'),
     -- نقش‌ها
     ('ROLE_READ',              'مشاهده نقش‌ها و دسترسی‌ها',          'ROLE'),
     ('ROLE_WRITE',             'مدیریت نقش‌ها و تخصیص دسترسی‌ها',    'ROLE'),
