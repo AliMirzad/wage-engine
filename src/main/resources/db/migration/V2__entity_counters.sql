@@ -23,10 +23,12 @@ CREATE TABLE entity_counters (
 -- مقداردهی اولیه بر اساس داده موجود تا شماره‌های بعدی از جای درست شروع شوند.
 -- در نصب تازه هیچ ردیفی درج نمی‌شود؛ در نصب قدیمی، بیشترین شماره تخصیص‌یافته
 -- به‌عنوان current_value ذخیره می‌شود.
+-- NULLIF از empty string در برابر رکوردهای legacy با فرمت متفاوت (مثلاً بدون
+-- تکه سوم بعد از خط تیره) محافظت می‌کند. MAX خود NULL را نادیده می‌گیرد.
 INSERT INTO entity_counters (tenant_id, entity_type, current_value)
 SELECT tenant_id,
        'EMPLOYEE',
-       COALESCE(MAX(CAST(SPLIT_PART(personnel_code, '-', 3) AS INTEGER)), 0)
+       COALESCE(MAX(CAST(NULLIF(SPLIT_PART(personnel_code, '-', 3), '') AS INTEGER)), 0)
 FROM employees
 GROUP BY tenant_id
 ON CONFLICT (tenant_id, entity_type) DO NOTHING;
@@ -34,7 +36,7 @@ ON CONFLICT (tenant_id, entity_type) DO NOTHING;
 INSERT INTO entity_counters (tenant_id, entity_type, current_value)
 SELECT tenant_id,
        'CONTRACT',
-       COALESCE(MAX(CAST(SPLIT_PART(contract_number, '-', 3) AS INTEGER)), 0)
+       COALESCE(MAX(CAST(NULLIF(SPLIT_PART(contract_number, '-', 3), '') AS INTEGER)), 0)
 FROM contracts
 GROUP BY tenant_id
 ON CONFLICT (tenant_id, entity_type) DO NOTHING;
